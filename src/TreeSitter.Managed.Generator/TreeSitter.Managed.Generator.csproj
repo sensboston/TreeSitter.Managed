@@ -5,6 +5,11 @@
     <AssemblyName>ts2cs</AssemblyName>
     <RootNamespace>TreeSitter.Generator</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <Description>ts2cs: converts a generated tree-sitter grammar (src/parser.c) into C# code for TreeSitter.Managed.</Description>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>ts2cs</ToolCommandName>
+    <!-- A tool package carries its .pdb files itself; no separate symbol package. -->
+    <IncludeSymbols>false</IncludeSymbols>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../TreeSitter.Managed/TreeSitter.Managed.csproj" />

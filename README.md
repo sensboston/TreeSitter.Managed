@@ -1,13 +1,45 @@
 # TreeSitter.Managed
 
+<img src="https://raw.githubusercontent.com/sensboston/TreeSitter.Managed/main/assets/icon.png" align="right" width="96" alt="">
+
+[![NuGet](https://img.shields.io/nuget/v/TreeSitter.Managed)](https://www.nuget.org/packages/TreeSitter.Managed)
+[![CI](https://github.com/sensboston/TreeSitter.Managed/actions/workflows/build.yml/badge.svg)](https://github.com/sensboston/TreeSitter.Managed/actions/workflows/build.yml)
+[![.NET](https://img.shields.io/badge/.NET-8%20%7C%2010-512BD4)](https://dotnet.microsoft.com)
+[![tree-sitter](https://img.shields.io/badge/tree--sitter-v0.27.2-2e7d32)](https://github.com/tree-sitter/tree-sitter/releases/tag/v0.27.2)
+[![Grammars](https://img.shields.io/badge/grammars-18-6a4ce6)](#the-grammar-packages)
+[![NativeAOT](https://img.shields.io/badge/NativeAOT-ready-brightgreen)](#supported-targets)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20WebAssembly-lightgrey)](#supported-targets)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 A fully managed C# port of the [tree-sitter](https://github.com/tree-sitter/tree-sitter)
 incremental parsing runtime (the code of `lib/src` of tag `v0.27.2`), plus `ts2cs`, a
 converter that turns a generated tree-sitter grammar (`src/parser.c`) into C# code. There
 are no native binaries and no P/Invoke: the parser tables, the parser itself and the
 external scanners of the grammars are C#. One assembly runs wherever the .NET runtime runs.
 
-Status: early development. The design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
-the pinned upstream versions are in [UPSTREAM.md](UPSTREAM.md).
+```
+dotnet add package TreeSitter.Managed
+dotnet add package TreeSitter.Managed.Grammars.Python
+```
+
+## tree-sitter
+
+tree-sitter is the work of **Max Brunsfeld** and its many contributors. It is a parser
+generator and an incremental parsing library: it builds a concrete syntax tree for a source
+file and keeps it up to date as the file is edited, fast enough to run on every keystroke, and
+it stays useful when the code has syntax errors. Editors, code hosts and analysis tools use it
+for highlighting, navigation, folding and structural search.
+
+Everything in this package comes from that work: the parsing algorithm, the error recovery,
+the query language, the structure of the API and the grammars, each written and maintained by
+its own authors (see the table below). The original projects live at
+[github.com/tree-sitter](https://github.com/tree-sitter) and
+[github.com/tree-sitter-grammars](https://github.com/tree-sitter-grammars). Thank you all for
+tree-sitter and for making it free for everyone to use.
+
+The design of the port is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), the pinned upstream
+versions are in [UPSTREAM.md](UPSTREAM.md), and the changes per version are in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Why a managed port
 
@@ -33,24 +65,24 @@ upstream license ships with the package.
 
 | Grammar | Package | Upstream repository | Commit | License |
 |---|---|---|---|---|
-| Bash | `TreeSitter.Managed.Grammars.Bash` | [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) | `a06c2e4415e9bc0346c6b86d401879ffb44058f7` | MIT |
-| C | `TreeSitter.Managed.Grammars.C` | [tree-sitter-c](https://github.com/tree-sitter/tree-sitter-c) | `b780e47fc780ddc8da13afa35a3f4ed5c157823d` | MIT |
-| C# | `TreeSitter.Managed.Grammars.CSharp` | [tree-sitter-c-sharp](https://github.com/tree-sitter/tree-sitter-c-sharp) | `e3971fcb53bf5573a7e0d4ff6db46d2a77a4bf71` | MIT |
-| C++ | `TreeSitter.Managed.Grammars.Cpp` | [tree-sitter-cpp](https://github.com/tree-sitter/tree-sitter-cpp) | `c009222808634c1014f82438d4883753516a2c24` | MIT |
-| CSS | `TreeSitter.Managed.Grammars.Css` | [tree-sitter-css](https://github.com/tree-sitter/tree-sitter-css) | `dda5cfc5722c429eaba1c910ca32c2c0c5bb1a3f` | MIT |
-| Go | `TreeSitter.Managed.Grammars.Go` | [tree-sitter-go](https://github.com/tree-sitter/tree-sitter-go) | `2346a3ab1bb3857b48b29d779a1ef9799a248cd7` | MIT |
-| HTML | `TreeSitter.Managed.Grammars.Html` | [tree-sitter-html](https://github.com/tree-sitter/tree-sitter-html) | `73a3947324f6efddf9e17c0ea58d454843590cc0` | MIT |
-| Java | `TreeSitter.Managed.Grammars.Java` | [tree-sitter-java](https://github.com/tree-sitter/tree-sitter-java) | `e10607b45ff745f5f876bfa3e94fbcc6b44bdc11` | MIT |
-| JavaScript | `TreeSitter.Managed.Grammars.JavaScript` | [tree-sitter-javascript](https://github.com/tree-sitter/tree-sitter-javascript) | `58404d8cf191d69f2674a8fd507bd5776f46cb11` | MIT |
-| JSON | `TreeSitter.Managed.Grammars.Json` | [tree-sitter-json](https://github.com/tree-sitter/tree-sitter-json) | `254c42a6476413b776221e03982ac8ae159eeb72` | MIT |
-| Markdown | `TreeSitter.Managed.Grammars.Markdown` | [tree-sitter-markdown](https://github.com/tree-sitter-grammars/tree-sitter-markdown) | `41ff24a6c775492c543b09228aeb98d1cd2b3a0f` | MIT |
-| Markdown inline | `TreeSitter.Managed.Grammars.MarkdownInline` | [tree-sitter-markdown](https://github.com/tree-sitter-grammars/tree-sitter-markdown) | `41ff24a6c775492c543b09228aeb98d1cd2b3a0f` | MIT |
-| Python | `TreeSitter.Managed.Grammars.Python` | [tree-sitter-python](https://github.com/tree-sitter/tree-sitter-python) | `26855eabccb19c6abf499fbc5b8dc7cc9ab8bc64` | MIT |
-| Rust | `TreeSitter.Managed.Grammars.Rust` | [tree-sitter-rust](https://github.com/tree-sitter/tree-sitter-rust) | `77a3747266f4d621d0757825e6b11edcbf991ca5` | MIT |
-| TOML | `TreeSitter.Managed.Grammars.Toml` | [tree-sitter-toml](https://github.com/tree-sitter-grammars/tree-sitter-toml) | `64b56832c2cffe41758f28e05c756a3a98d16f41` | MIT |
-| TSX | `TreeSitter.Managed.Grammars.Tsx` | [tree-sitter-typescript](https://github.com/tree-sitter/tree-sitter-typescript) | `75b3874edb2dc714fb1fd77a32013d0f8699989f` | MIT |
-| TypeScript | `TreeSitter.Managed.Grammars.TypeScript` | [tree-sitter-typescript](https://github.com/tree-sitter/tree-sitter-typescript) | `75b3874edb2dc714fb1fd77a32013d0f8699989f` | MIT |
-| YAML | `TreeSitter.Managed.Grammars.Yaml` | [tree-sitter-yaml](https://github.com/tree-sitter-grammars/tree-sitter-yaml) | `a1c4812a73ec5e089de8e441fdea3a921e8d5079` | MIT |
+| Bash | [`TreeSitter.Managed.Grammars.Bash`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.Bash) | [tree-sitter-bash](https://github.com/tree-sitter/tree-sitter-bash) | `a06c2e4415e9bc0346c6b86d401879ffb44058f7` | MIT |
+| C | [`TreeSitter.Managed.Grammars.C`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.C) | [tree-sitter-c](https://github.com/tree-sitter/tree-sitter-c) | `b780e47fc780ddc8da13afa35a3f4ed5c157823d` | MIT |
+| C# | [`TreeSitter.Managed.Grammars.CSharp`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.CSharp) | [tree-sitter-c-sharp](https://github.com/tree-sitter/tree-sitter-c-sharp) | `e3971fcb53bf5573a7e0d4ff6db46d2a77a4bf71` | MIT |
+| C++ | [`TreeSitter.Managed.Grammars.Cpp`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.Cpp) | [tree-sitter-cpp](https://github.com/tree-sitter/tree-sitter-cpp) | `c009222808634c1014f82438d4883753516a2c24` | MIT |
+| CSS | [`TreeSitter.Managed.Grammars.Css`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.Css) | [tree-sitter-css](https://github.com/tree-sitter/tree-sitter-css) | `dda5cfc5722c429eaba1c910ca32c2c0c5bb1a3f` | MIT |
+| Go | [`TreeSitter.Managed.Grammars.Go`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.Go) | [tree-sitter-go](https://github.com/tree-sitter/tree-sitter-go) | `2346a3ab1bb3857b48b29d779a1ef9799a248cd7` | MIT |
+| HTML | [`TreeSitter.Managed.Grammars.Html`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.Html) | [tree-sitter-html](https://github.com/tree-sitter/tree-sitter-html) | `73a3947324f6efddf9e17c0ea58d454843590cc0` | MIT |
+| Java | [`TreeSitter.Managed.Grammars.Java`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.Java) | [tree-sitter-java](https://github.com/tree-sitter/tree-sitter-java) | `e10607b45ff745f5f876bfa3e94fbcc6b44bdc11` | MIT |
+| JavaScript | [`TreeSitter.Managed.Grammars.JavaScript`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.JavaScript) | [tree-sitter-javascript](https://github.com/tree-sitter/tree-sitter-javascript) | `58404d8cf191d69f2674a8fd507bd5776f46cb11` | MIT |
+| JSON | [`TreeSitter.Managed.Grammars.Json`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.Json) | [tree-sitter-json](https://github.com/tree-sitter/tree-sitter-json) | `254c42a6476413b776221e03982ac8ae159eeb72` | MIT |
+| Markdown | [`TreeSitter.Managed.Grammars.Markdown`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.Markdown) | [tree-sitter-markdown](https://github.com/tree-sitter-grammars/tree-sitter-markdown) | `41ff24a6c775492c543b09228aeb98d1cd2b3a0f` | MIT |
+| Markdown inline | [`TreeSitter.Managed.Grammars.MarkdownInline`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.MarkdownInline) | [tree-sitter-markdown](https://github.com/tree-sitter-grammars/tree-sitter-markdown) | `41ff24a6c775492c543b09228aeb98d1cd2b3a0f` | MIT |
+| Python | [`TreeSitter.Managed.Grammars.Python`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.Python) | [tree-sitter-python](https://github.com/tree-sitter/tree-sitter-python) | `26855eabccb19c6abf499fbc5b8dc7cc9ab8bc64` | MIT |
+| Rust | [`TreeSitter.Managed.Grammars.Rust`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.Rust) | [tree-sitter-rust](https://github.com/tree-sitter/tree-sitter-rust) | `77a3747266f4d621d0757825e6b11edcbf991ca5` | MIT |
+| TOML | [`TreeSitter.Managed.Grammars.Toml`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.Toml) | [tree-sitter-toml](https://github.com/tree-sitter-grammars/tree-sitter-toml) | `64b56832c2cffe41758f28e05c756a3a98d16f41` | MIT |
+| TSX | [`TreeSitter.Managed.Grammars.Tsx`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.Tsx) | [tree-sitter-typescript](https://github.com/tree-sitter/tree-sitter-typescript) | `75b3874edb2dc714fb1fd77a32013d0f8699989f` | MIT |
+| TypeScript | [`TreeSitter.Managed.Grammars.TypeScript`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.TypeScript) | [tree-sitter-typescript](https://github.com/tree-sitter/tree-sitter-typescript) | `75b3874edb2dc714fb1fd77a32013d0f8699989f` | MIT |
+| YAML | [`TreeSitter.Managed.Grammars.Yaml`](https://www.nuget.org/packages/TreeSitter.Managed.Grammars.Yaml) | [tree-sitter-yaml](https://github.com/tree-sitter-grammars/tree-sitter-yaml) | `a1c4812a73ec5e089de8e441fdea3a921e8d5079` | MIT |
 
 The two Markdown grammars come from one repository with two subdirectories, and they are
 parsed as two separate languages: an inline snippet is not tied to the block tree, and the
@@ -178,6 +210,25 @@ does not fail, it only makes the parser reuse the wrong parts of the tree.
 `tests/TreeSitter.Managed.Tests/Parsing` (EditRunner, IncrementalParseTests) parses edited
 trees both natively and by the port, so the rule is checked, not just documented.
 
+## Another grammar with ts2cs
+
+The converter is also a dotnet tool, so a grammar that is not bundled here can be used in the
+same way:
+
+```
+dotnet tool install -g TreeSitter.Managed.Generator
+
+# in the grammar repository, with the tree-sitter CLI v0.27.2 (ABI 15):
+tree-sitter generate
+ts2cs generate src/parser.c --name MyLang --namespace MyCompany.Grammars.MyLang --out Generated
+```
+
+Add the generated `Generated/MyLangLanguage.g.cs` to a project that references
+`TreeSitter.Managed`, and use `MyLangGrammar.Language`. If the grammar has an external scanner
+(`src/scanner.c`), the generated code expects a class `MyLangScanner : IExternalScanner` in the
+same namespace: a port of that C file, one method per C function. The scanners in `grammars/`
+show how (`grammars/Css/CssScanner.cs` is a small one).
+
 ## How the port is checked
 
 The tests do not carry hand-written expectations for the parser: they use the native runtime
@@ -270,6 +321,13 @@ regenerate one, or to add one:
 5. Run the tests. `bash tools/build-oracle.sh` first, so that the oracle comparisons are
    enabled: they cover the tables, the corpus, the incremental edits and the queries of the
    new grammar against the native build of the same commit.
+
+## Status
+
+0.1.0 is the first public version. Every grammar in the table is checked against the native
+runtime as described above, and the API follows the C API of tree-sitter. The API may still
+change before 1.0. Bug reports and grammar requests are welcome in the
+[issues](https://github.com/sensboston/TreeSitter.Managed/issues).
 
 ## License
 

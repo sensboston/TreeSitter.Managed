@@ -3,6 +3,8 @@ name: build
 on:
   push:
     branches: [main]
+    # A tag v<version> runs everything and then publishes the packages (job "publish").
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -363,3 +365,96 @@ jobs:
           name: wasm-smoke-logs
           path: ci-logs
           if-no-files-found: ignore
+
+  # The NuGet packages (the runtime, every grammar and the ts2cs tool) with their symbol
+  # packages, built from the checkout: deterministic, SourceLink to this commit. The version
+  # is the tag without its "v" on a tag, else the VersionPrefix of Directory.Build.props
+  # with a "ci" suffix.
+  pack:
+    needs: [test, aot, wasm]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Pack
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version=(-p:Version="${GITHUB_REF_NAME#v}")
+          else
+            version=(-p:VersionSuffix="ci.${GITHUB_RUN_NUMBER}")
+          fi
+          dotnet pack TreeSitter.Managed.slnx -c Release -o artifacts/package "${version[@]}"
+          ls -l artifacts/package
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: artifacts/package/*
+          retention-days: 30
+
+  # Publishing, only for a tag v<version>: the packages of this run go to nuget.org (trusted
+  # publishing: a short-lived key from GitHub OIDC, no stored secret) and to a GitHub release
+  # with the notes of that version from CHANGELOG.md.
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download the packages
+        uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: package
+
+      - name: Check the version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          test -f "package/TreeSitter.Managed.$version.nupkg" || { echo "no package for version $version:"; ls package; exit 1; }
+          grep -q "^## $version\$" CHANGELOG.md || { echo "CHANGELOG.md has no section ## $version"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: NuGet login
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: sensboston
+
+      # The symbol package of each .nupkg (.snupkg next to it) is pushed with it.
+      - name: Push to nuget.org
+        run: dotnet nuget push "package/*.nupkg" --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          awk -v v="## $VERSION" '$0 == v {on = 1; next} /^## / {on = 0} on' CHANGELOG.md > notes.md
+          {
+            echo
+            echo '```'
+            echo "dotnet add package TreeSitter.Managed --version $VERSION"
+            echo "dotnet add package TreeSitter.Managed.Grammars.<Name> --version $VERSION"
+            echo "dotnet tool install -g TreeSitter.Managed.Generator --version $VERSION"
+            echo '```'
+          } >> notes.md
+          gh release create "$GITHUB_REF_NAME" package/* --title "TreeSitter.Managed $VERSION" --notes-file notes.md

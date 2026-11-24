@@ -19,12 +19,22 @@
     <TsIsLibrary Condition="$(TsProjectDir.StartsWith('$(TsRepoDir)grammars/'))">true</TsIsLibrary>
   </PropertyGroup>
 
+  <!-- The generator is shipped as the dotnet tool ts2cs (package TreeSitter.Managed.Generator). -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'TreeSitter.Managed.Generator'">
+    <TsIsPackage>true</TsIsPackage>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(TsIsLibrary)' == 'true'">
-    <VersionPrefix>0.1.0</VersionPrefix>
+    <TsIsPackage>true</TsIsPackage>
     <TargetFrameworks>$(TsLibraryTargets)</TargetFrameworks>
     <IsTrimmable>true</IsTrimmable>
     <IsAotCompatible>true</IsAotCompatible>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- NuGet metadata of every package. The version comes from the tag v<version> in CI
+       (-p:Version=...); VersionPrefix is the version of local builds. -->
+  <PropertyGroup Condition="'$(TsIsPackage)' == 'true'">
+    <VersionPrefix>0.1.0</VersionPrefix>
     <Authors>SeNS</Authors>
     <Copyright>Copyright (c) 2026 SeNS</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -32,13 +42,23 @@
     <PackageId>$(MSBuildProjectName)</PackageId>
     <PackageProjectUrl>https://github.com/sensboston/TreeSitter.Managed</PackageProjectUrl>
     <RepositoryUrl>https://github.com/sensboston/TreeSitter.Managed</RepositoryUrl>
-    <PackageTags>tree-sitter;parser;incremental;syntax-tree;query;managed</PackageTags>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <PackageTags>tree-sitter;parser;incremental;syntax-tree;query;managed;nativeaot;wasm</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <PackageReleaseNotes>https://github.com/sensboston/TreeSitter.Managed/blob/main/CHANGELOG.md</PackageReleaseNotes>
+    <!-- Symbols (.snupkg) with SourceLink to this repository (built into the .NET SDK). -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(TsIsLibrary)' == 'true'">
+  <ItemGroup Condition="'$(TsIsPackage)' == 'true'">
     <None Include="$(TsRepoDir)README.md" Pack="true" PackagePath="/" Visible="false" />
     <None Include="$(TsRepoDir)THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="/" Visible="false" />
+    <None Include="$(TsRepoDir)assets/icon.png" Pack="true" PackagePath="/" Visible="false" />
   </ItemGroup>
 
   <!-- Grammar packages: the query files as embedded resources (<Name>Grammar.Query) and the grammar license. -->
