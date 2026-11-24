@@ -3,6 +3,7 @@
 <img src="https://raw.githubusercontent.com/sensboston/TreeSitter.Managed/main/assets/icon.png" align="right" width="96" alt="">
 
 [![NuGet](https://img.shields.io/nuget/v/TreeSitter.Managed)](https://www.nuget.org/packages/TreeSitter.Managed)
+[![Downloads](https://img.shields.io/nuget/dt/TreeSitter.Managed)](https://www.nuget.org/packages/TreeSitter.Managed)
 [![CI](https://github.com/sensboston/TreeSitter.Managed/actions/workflows/build.yml/badge.svg)](https://github.com/sensboston/TreeSitter.Managed/actions/workflows/build.yml)
 [![.NET](https://img.shields.io/badge/.NET-8%20%7C%2010-512BD4)](https://dotnet.microsoft.com)
 [![tree-sitter](https://img.shields.io/badge/tree--sitter-v0.27.2-2e7d32)](https://github.com/tree-sitter/tree-sitter/releases/tag/v0.27.2)
@@ -21,6 +22,12 @@ external scanners of the grammars are C#. One assembly runs wherever the .NET ru
 dotnet add package TreeSitter.Managed
 dotnet add package TreeSitter.Managed.Grammars.Python
 ```
+
+All packages are on nuget.org: the runtime
+[TreeSitter.Managed](https://www.nuget.org/packages/TreeSitter.Managed), one package per grammar
+(see [the grammar packages](#the-grammar-packages)) and the converter tool
+[TreeSitter.Managed.Generator](https://www.nuget.org/packages/TreeSitter.Managed.Generator)
+(`dotnet tool install -g TreeSitter.Managed.Generator`).
 
 ## tree-sitter
 
