@@ -1,0 +1,147 @@
+# Compress of the repeat chains (array_repeat1 = 24): the left spine of depth 2..6.
+# Every spine node has two children; compress rotates the spine until it is flat.
+lang json
+# Chain of depth 2.
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+node r2 24 0 r0 r1
+leaf r3 10 0:0:0 1:0:1 1 1 0 0 0
+node r4 24 0 r2 r3
+dump r4
+mut r4
+compress r4 10
+dump r4
+release r4
+# Chain of depth 3.
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+node r2 24 0 r0 r1
+leaf r3 10 0:0:0 1:0:1 1 1 0 0 0
+node r4 24 0 r2 r3
+leaf r5 10 0:0:0 1:0:1 1 1 0 0 0
+node r6 24 0 r4 r5
+dump r6
+mut r6
+compress r6 10
+dump r6
+release r6
+# Chain of depth 4.
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+node r2 24 0 r0 r1
+leaf r3 10 0:0:0 1:0:1 1 1 0 0 0
+node r4 24 0 r2 r3
+leaf r5 10 0:0:0 1:0:1 1 1 0 0 0
+node r6 24 0 r4 r5
+leaf r7 10 0:0:0 1:0:1 1 1 0 0 0
+node r8 24 0 r6 r7
+dump r8
+mut r8
+compress r8 10
+dump r8
+release r8
+# Chain of depth 5.
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+node r2 24 0 r0 r1
+leaf r3 10 0:0:0 1:0:1 1 1 0 0 0
+node r4 24 0 r2 r3
+leaf r5 10 0:0:0 1:0:1 1 1 0 0 0
+node r6 24 0 r4 r5
+leaf r7 10 0:0:0 1:0:1 1 1 0 0 0
+node r8 24 0 r6 r7
+leaf r9 10 0:0:0 1:0:1 1 1 0 0 0
+node r10 24 0 r8 r9
+dump r10
+mut r10
+compress r10 10
+dump r10
+release r10
+# Chain of depth 6.
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+node r2 24 0 r0 r1
+leaf r3 10 0:0:0 1:0:1 1 1 0 0 0
+node r4 24 0 r2 r3
+leaf r5 10 0:0:0 1:0:1 1 1 0 0 0
+node r6 24 0 r4 r5
+leaf r7 10 0:0:0 1:0:1 1 1 0 0 0
+node r8 24 0 r6 r7
+leaf r9 10 0:0:0 1:0:1 1 1 0 0 0
+node r10 24 0 r8 r9
+leaf r11 10 0:0:0 1:0:1 1 1 0 0 0
+node r12 24 0 r10 r11
+dump r12
+mut r12
+compress r12 10
+dump r12
+release r12
+# One rotation at a time: count 1 on a chain of depth 4, then count 0.
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+node r2 24 0 r0 r1
+leaf r3 10 0:0:0 1:0:1 1 1 0 0 0
+node r4 24 0 r2 r3
+leaf r5 10 0:0:0 1:0:1 1 1 0 0 0
+node r6 24 0 r4 r5
+leaf r7 10 0:0:0 1:0:1 1 1 0 0 0
+node r8 24 0 r6 r7
+mut r8
+compress r8 1
+dump r8
+compress r8 0
+dump r8
+release r8
+# ref_count > 1 at the grandchild: the second spine node is shared, so compress
+# stops before the first rotation.
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+node r2 24 0 r0 r1
+leaf r3 10 0:0:0 1:0:1 1 1 0 0 0
+node r4 24 0 r2 r3
+dup r40 r4
+leaf r5 10 0:0:0 1:0:1 1 1 0 0 0
+node r6 24 0 r4 r5
+leaf r7 10 0:0:0 1:0:1 1 1 0 0 0
+node r8 24 0 r6 r7
+dump r40
+mut r8
+compress r8 10
+dump r8
+dump r40
+release r40
+release r8
+# ref_count > 1 at the child: compress stops at once.
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+node r2 24 0 r0 r1
+leaf r3 10 0:0:0 1:0:1 1 1 0 0 0
+node r4 24 0 r2 r3
+dup r40 r4
+leaf r5 10 0:0:0 1:0:1 1 1 0 0 0
+node r6 24 0 r4 r5
+mut r6
+compress r6 10
+dump r6
+release r40
+release r6
+# The symbol of the child differs from the symbol of the top: no rotation.
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+node r2 24 0 r0 r1
+leaf r3 10 0:0:0 1:0:1 1 1 0 0 0
+node r4 24 0 r2 r3
+leaf r5 10 0:0:0 1:0:1 1 1 0 0 0
+node r6 24 0 r4 r5
+leaf r30 10 0:0:0 1:0:1 1 1 0 0 0
+node r31 19 0 r6 r30
+mut r31
+compress r31 10
+dump r31
+release r31
+# compress of an inline leaf does nothing.
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+mut r0
+compress r0 5
+dump r0
+release r0

@@ -1,0 +1,40 @@
+# Lookahead 16 keeps the leaves on the heap (see the note of edit_rows).
+# The edit of the external tokens. The external token r0 is a heap leaf with the
+# external scanner state 0102; the node r2 has the external token and a plain leaf.
+lang json
+leaf r0 11 0:0:0 1:0:1 16 1 1 0 0
+extstate r0 0102
+leaf r1 10 0:0:0 1:0:1 16 2 0 0 0
+node r2 19 0 r0 r1
+dump r2
+# The last external token of the node is the external token itself.
+lastext r2
+# A plain leaf has no external token.
+leaf r9 10 0:0:0 1:0:1 16 3 0 0 0
+lastext r9
+release r9
+# The edit inside the external token: the token is cut, the state stays.
+clone r3 r2
+edit r3 0:0:0 1:0:1 0:0:0
+dump r3
+lastext r3
+# The edit before the node moves the padding; the external token is still found.
+clone r4 r2
+edit r4 0:0:0 0:0:0 3:0:3
+dump r4
+lastext r4
+# The edit after the node: nothing changes.
+clone r5 r2
+edit r5 9:0:9 9:0:9 10:0:10
+lastext r5
+dump r5
+# The edit that inserts a newline between the token and the plain leaf.
+clone r6 r2
+edit r6 1:0:1 1:0:1 2:1:0
+dump r6
+lastext r6
+release r2
+release r3
+release r4
+release r5
+release r6

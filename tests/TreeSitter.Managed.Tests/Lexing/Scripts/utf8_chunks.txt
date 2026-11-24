@@ -1,0 +1,19 @@
+# 'ab' + U+00E9 + newline + 'c', UTF-8, chunks of 1 byte
+input utf8 1 6162c3a90a63
+reset 0:0:0
+start
+dump
+advance 0
+advance 0
+column
+mark_end
+advance 0
+dump
+advance 0
+column
+advance 1
+advance 0
+eof
+dump
+finish 0
+dump

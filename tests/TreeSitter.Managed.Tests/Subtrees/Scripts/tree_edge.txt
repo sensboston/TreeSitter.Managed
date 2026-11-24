@@ -1,0 +1,15 @@
+# Edge cases: parent of root, out of range child, null node.
+lang json
+leaf r0 5 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 2 0 0 0
+node r2 19 0 r0 r1
+tree r2
+root r0
+parent r0
+is_null r0
+root r0
+child r0 99
+is_null r0
+root r0
+named_child r0 99
+is_null r0

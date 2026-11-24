@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>TreeSitter.Grammars.Tsx</RootNamespace>
+    <Description>TSX grammar for TreeSitter.Managed.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/TreeSitter.Managed/TreeSitter.Managed.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../TypeScript/common/ScannerCommon.cs" Link="common/ScannerCommon.cs" />
+  </ItemGroup>
+</Project>

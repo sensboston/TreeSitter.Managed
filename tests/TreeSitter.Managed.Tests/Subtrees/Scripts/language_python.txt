@@ -1,0 +1,20 @@
+# Real symbols of the Python grammar: the aliases, the fields and the
+# productions of tree-sitter-python.
+lang python
+# identifier = 1, list_splat = 149, module = 108.
+leaf r0 1 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 149 0:0:0 1:0:1 1 2 0 0 0
+# Production 2 aliases its first child to list_splat.
+node r2 108 2 r0 r1
+string r2 0 0 0
+string r2 0 0 1
+dump r2
+# Production 4 has the field "name" for its first child.
+leaf r3 1 0:0:0 1:0:1 1 3 0 0 0
+leaf r4 96 0:0:0 1:0:1 1 4 0 0 0
+node r5 108 4 r3 r4
+string r5 0 0 1
+dump r5
+# An external token of the grammar: _indent = 102.
+leaf r6 102 0:0:0 1:0:1 1 5 0 0 0
+dump r6

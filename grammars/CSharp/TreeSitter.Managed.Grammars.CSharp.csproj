@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>TreeSitter.Grammars.CSharp</RootNamespace>
+    <Description>C# grammar for TreeSitter.Managed.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/TreeSitter.Managed/TreeSitter.Managed.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,29 @@
+# Stack: ts_stack_pop_error. An error on the top of the version is popped (one slice, renamed
+# to the version). A version without an error on the top has nothing to pop. A node with a
+# normal link first and an error link second: the search goes on past the normal link, and
+# the path through the normal link is stopped by the callback (its top is not an error).
+# language: json
+lang json
+snew
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+spush 0 r0 0 2
+error r1 64 0:0:0 1:0:1 1 2
+spush 0 r1 0 2
+spoperror 0 r2
+sdump
+leaf r3 10 0:0:0 1:0:1 1 1 0 0 0
+spush 0 r3 0 2
+spoperror 0 r4
+sdump
+snew
+scopy 0
+error r6 64 0:0:0 1:0:1 1 2
+spush 0 r6 0 2
+leaf r7 10 0:0:0 0:0:0 1 2 0 0 0
+spush 0 r7 0 2
+error r8 64 0:0:0 1:0:1 1 2
+spush 1 r8 0 2
+smerge 0 1
+spoperror 0 r5
+sdump
+sdelete

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>TreeSitter.Grammars.Python</RootNamespace>
+    <Description>Python grammar for TreeSitter.Managed (tables, lexer and external scanner).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/TreeSitter.Managed/TreeSitter.Managed.csproj" />
+  </ItemGroup>
+</Project>

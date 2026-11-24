@@ -1,0 +1,21 @@
+# [1, 2] in JSON: anon_sym_LBRACK=5 sym_number=10 anon_sym_COMMA=2 anon_sym_RBRACK=6
+# sym_array=19 aux_sym_array_repeat1=24 sym_document=15
+lang json
+leaf r0 5 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 2 0 0 0
+leaf r2 2 0:0:0 1:0:1 1 3 0 0 0
+leaf r3 10 1:0:1 1:0:1 1 4 0 0 0
+leaf r4 6 0:0:0 1:0:1 1 5 0 0 0
+node r5 24 0 r2 r3
+node r6 19 0 r0 r1 r5 r4
+dump r6
+string r6 0 0 0
+string r6 0 0 1
+dup r7 r6
+node r8 15 0 r7
+dump r8
+mut r6
+dump r6
+release r6
+dump r8
+release r8

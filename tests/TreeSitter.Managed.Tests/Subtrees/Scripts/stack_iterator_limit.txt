@@ -1,0 +1,537 @@
+# Stack: the iterators of stack__iter stop at MAX_ITERATOR_COUNT (64). The summary
+# walks three levels of eight links each: X -> Y1..Y8, every Y -> Z1..Z8, every Z ->
+# the base. At the Z level there are already 64 iterators, so the expansion stops.
+# The nodes are built by merges, as in stack_merge_limit.txt.
+# language: json
+lang json
+snew
+scopy 0
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 1 r1 0 2
+scopy 0
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 2 r1 0 2
+smerge 1 2
+scopy 0
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 2 r1 0 2
+smerge 1 2
+scopy 0
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 2 r1 0 2
+smerge 1 2
+scopy 0
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 2 r1 0 2
+smerge 1 2
+scopy 0
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 2 r1 0 2
+smerge 1 2
+scopy 0
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 2 r1 0 2
+smerge 1 2
+scopy 0
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 2 r1 0 2
+smerge 1 2
+scopy 0
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 2 r1 0 2
+scopy 0
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 3 r1 0 2
+smerge 2 3
+scopy 0
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 3 r1 0 2
+smerge 2 3
+scopy 0
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 3 r1 0 2
+smerge 2 3
+scopy 0
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 3 r1 0 2
+smerge 2 3
+scopy 0
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 3 r1 0 2
+smerge 2 3
+scopy 0
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 3 r1 0 2
+smerge 2 3
+scopy 0
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 3 r1 0 2
+smerge 2 3
+scopy 0
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 3 r1 0 2
+scopy 0
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 4 r1 0 2
+smerge 3 4
+scopy 0
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 4 r1 0 2
+smerge 3 4
+scopy 0
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 4 r1 0 2
+smerge 3 4
+scopy 0
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 4 r1 0 2
+smerge 3 4
+scopy 0
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 4 r1 0 2
+smerge 3 4
+scopy 0
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 4 r1 0 2
+smerge 3 4
+scopy 0
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 4 r1 0 2
+smerge 3 4
+scopy 0
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 4 r1 0 2
+scopy 0
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 5 r1 0 2
+smerge 4 5
+scopy 0
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 5 r1 0 2
+smerge 4 5
+scopy 0
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 5 r1 0 2
+smerge 4 5
+scopy 0
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 5 r1 0 2
+smerge 4 5
+scopy 0
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 5 r1 0 2
+smerge 4 5
+scopy 0
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 5 r1 0 2
+smerge 4 5
+scopy 0
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 5 r1 0 2
+smerge 4 5
+scopy 0
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 5 r1 0 2
+scopy 0
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 6 r1 0 2
+smerge 5 6
+scopy 0
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 6 r1 0 2
+smerge 5 6
+scopy 0
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 6 r1 0 2
+smerge 5 6
+scopy 0
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 6 r1 0 2
+smerge 5 6
+scopy 0
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 6 r1 0 2
+smerge 5 6
+scopy 0
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 6 r1 0 2
+smerge 5 6
+scopy 0
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 6 r1 0 2
+smerge 5 6
+scopy 0
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 6 r1 0 2
+scopy 0
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 7 r1 0 2
+smerge 6 7
+scopy 0
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 7 r1 0 2
+smerge 6 7
+scopy 0
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 7 r1 0 2
+smerge 6 7
+scopy 0
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 7 r1 0 2
+smerge 6 7
+scopy 0
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 7 r1 0 2
+smerge 6 7
+scopy 0
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 7 r1 0 2
+smerge 6 7
+scopy 0
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 7 r1 0 2
+smerge 6 7
+scopy 0
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 7 r1 0 2
+scopy 0
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 8 r1 0 2
+smerge 7 8
+scopy 0
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 8 r1 0 2
+smerge 7 8
+scopy 0
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 8 r1 0 2
+smerge 7 8
+scopy 0
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 8 r1 0 2
+smerge 7 8
+scopy 0
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 8 r1 0 2
+smerge 7 8
+scopy 0
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 8 r1 0 2
+smerge 7 8
+scopy 0
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 8 r1 0 2
+smerge 7 8
+scopy 0
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 8 r1 0 2
+scopy 0
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 9 r1 0 2
+smerge 8 9
+scopy 0
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 9 r1 0 2
+smerge 8 9
+scopy 0
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 9 r1 0 2
+smerge 8 9
+scopy 0
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 9 r1 0 2
+smerge 8 9
+scopy 0
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 9 r1 0 2
+smerge 8 9
+scopy 0
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 9 r1 0 2
+smerge 8 9
+scopy 0
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 9 r1 0 2
+smerge 8 9
+scopy 1
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 9 r1 0 3
+scopy 2
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 10 r1 0 3
+smerge 9 10
+scopy 3
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 10 r1 0 3
+smerge 9 10
+scopy 4
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 10 r1 0 3
+smerge 9 10
+scopy 5
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 10 r1 0 3
+smerge 9 10
+scopy 6
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 10 r1 0 3
+smerge 9 10
+scopy 7
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 10 r1 0 3
+smerge 9 10
+scopy 8
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 10 r1 0 3
+smerge 9 10
+scopy 1
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 10 r1 0 3
+scopy 2
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 11 r1 0 3
+smerge 10 11
+scopy 3
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 11 r1 0 3
+smerge 10 11
+scopy 4
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 11 r1 0 3
+smerge 10 11
+scopy 5
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 11 r1 0 3
+smerge 10 11
+scopy 6
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 11 r1 0 3
+smerge 10 11
+scopy 7
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 11 r1 0 3
+smerge 10 11
+scopy 8
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 11 r1 0 3
+smerge 10 11
+scopy 1
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 11 r1 0 3
+scopy 2
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 12 r1 0 3
+smerge 11 12
+scopy 3
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 12 r1 0 3
+smerge 11 12
+scopy 4
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 12 r1 0 3
+smerge 11 12
+scopy 5
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 12 r1 0 3
+smerge 11 12
+scopy 6
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 12 r1 0 3
+smerge 11 12
+scopy 7
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 12 r1 0 3
+smerge 11 12
+scopy 8
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 12 r1 0 3
+smerge 11 12
+scopy 1
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 12 r1 0 3
+scopy 2
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 13 r1 0 3
+smerge 12 13
+scopy 3
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 13 r1 0 3
+smerge 12 13
+scopy 4
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 13 r1 0 3
+smerge 12 13
+scopy 5
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 13 r1 0 3
+smerge 12 13
+scopy 6
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 13 r1 0 3
+smerge 12 13
+scopy 7
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 13 r1 0 3
+smerge 12 13
+scopy 8
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 13 r1 0 3
+smerge 12 13
+scopy 1
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 13 r1 0 3
+scopy 2
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 14 r1 0 3
+smerge 13 14
+scopy 3
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 14 r1 0 3
+smerge 13 14
+scopy 4
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 14 r1 0 3
+smerge 13 14
+scopy 5
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 14 r1 0 3
+smerge 13 14
+scopy 6
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 14 r1 0 3
+smerge 13 14
+scopy 7
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 14 r1 0 3
+smerge 13 14
+scopy 8
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 14 r1 0 3
+smerge 13 14
+scopy 1
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 14 r1 0 3
+scopy 2
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 15 r1 0 3
+smerge 14 15
+scopy 3
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 15 r1 0 3
+smerge 14 15
+scopy 4
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 15 r1 0 3
+smerge 14 15
+scopy 5
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 15 r1 0 3
+smerge 14 15
+scopy 6
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 15 r1 0 3
+smerge 14 15
+scopy 7
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 15 r1 0 3
+smerge 14 15
+scopy 8
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 15 r1 0 3
+smerge 14 15
+scopy 1
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 15 r1 0 3
+scopy 2
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 16 r1 0 3
+smerge 15 16
+scopy 3
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 16 r1 0 3
+smerge 15 16
+scopy 4
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 16 r1 0 3
+smerge 15 16
+scopy 5
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 16 r1 0 3
+smerge 15 16
+scopy 6
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 16 r1 0 3
+smerge 15 16
+scopy 7
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 16 r1 0 3
+smerge 15 16
+scopy 8
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 16 r1 0 3
+smerge 15 16
+scopy 1
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 16 r1 0 3
+scopy 2
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 17 r1 0 3
+smerge 16 17
+scopy 3
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 17 r1 0 3
+smerge 16 17
+scopy 4
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 17 r1 0 3
+smerge 16 17
+scopy 5
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 17 r1 0 3
+smerge 16 17
+scopy 6
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 17 r1 0 3
+smerge 16 17
+scopy 7
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 17 r1 0 3
+smerge 16 17
+scopy 8
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 17 r1 0 3
+smerge 16 17
+scopy 9
+leaf r1 11 0:0:0 1:0:1 1 1 0 0 0
+spush 17 r1 0 4
+scopy 10
+leaf r1 12 0:0:0 1:0:1 1 1 0 0 0
+spush 18 r1 0 4
+smerge 17 18
+scopy 11
+leaf r1 13 0:0:0 1:0:1 1 1 0 0 0
+spush 18 r1 0 4
+smerge 17 18
+scopy 12
+leaf r1 14 0:0:0 1:0:1 1 1 0 0 0
+spush 18 r1 0 4
+smerge 17 18
+scopy 13
+leaf r1 15 0:0:0 1:0:1 1 1 0 0 0
+spush 18 r1 0 4
+smerge 17 18
+scopy 14
+leaf r1 16 0:0:0 1:0:1 1 1 0 0 0
+spush 18 r1 0 4
+smerge 17 18
+scopy 15
+leaf r1 17 0:0:0 1:0:1 1 1 0 0 0
+spush 18 r1 0 4
+smerge 17 18
+scopy 16
+leaf r1 18 0:0:0 1:0:1 1 1 0 0 0
+spush 18 r1 0 4
+smerge 17 18
+ssummary 17 3
+sdump
+sdelete

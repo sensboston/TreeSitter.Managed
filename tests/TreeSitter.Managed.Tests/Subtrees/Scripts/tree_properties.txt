@@ -1,0 +1,25 @@
+# Node properties: start_byte, start_point, end_byte, end_point, type, symbol,
+# grammar_type, grammar_symbol, child_count, named_child_count, descendant_count,
+# parse_state.
+lang json
+leaf r0 5 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 2 0 0 0
+leaf r2 2 0:0:0 1:0:1 1 3 0 0 0
+leaf r3 10 1:0:1 1:0:1 1 4 0 0 0
+leaf r4 6 0:0:0 1:0:1 1 5 0 0 0
+node r5 24 0 r2 r3
+node r6 19 0 r0 r1 r5 r4
+tree r6
+root r0
+start_byte r0
+start_point r0
+end_byte r0
+end_point r0
+type r0
+symbol r0
+grammar_type r0
+grammar_symbol r0
+child_count r0
+named_child_count r0
+descendant_count r0
+parse_state r0

@@ -1,0 +1,26 @@
+# BOM at the start, an invalid byte 0xff, truncated sequence at the end; chunks of 2
+input utf8 2 efbbbf41ff42e282
+reset 0:0:0
+start
+dump
+advance 0
+dump
+advance 0
+dump
+advance 0
+dump
+finish 3
+dump
+# UTF-16LE with a surrogate pair and a lone surrogate, chunks of 3 bytes (odd on purpose)
+input utf16le 3 41003dd800de00d84200
+reset 0:0:0
+start
+advance 0
+dump
+advance 0
+dump
+advance 0
+dump
+advance 0
+eof
+dump

@@ -1,0 +1,37 @@
+# The BOM is skipped by ts_lexer_start without a column (lexer.c: ts_lexer__do_advance)
+input utf8 0 efbbbf6869
+reset 0:0:0
+start
+dump
+column
+advance 0
+dump
+column
+eof
+finish 0
+dump
+# A BOM that is not at byte 0 is an ordinary character
+input utf8 0 68efbbbf69
+reset 0:0:0
+start
+advance 0
+dump
+column
+advance 0
+dump
+eof
+# A BOM in UTF-16, chunked so that the halves of the BOM are apart
+input utf16le 1 fffe4100
+reset 0:0:0
+start
+dump
+column
+advance 0
+dump
+input utf16be 3 feff0041
+reset 0:0:0
+start
+dump
+advance 0
+dump
+eof

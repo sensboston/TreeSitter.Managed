@@ -1,0 +1,23 @@
+# The S-expression of a subtree: ts_subtree_string.
+lang json
+# The visible children only: the anonymous token is not printed.
+leaf r0 5 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 2 0 0 0
+node r2 19 0 r0 r1
+string r2 0 0 0
+# With every child: the anonymous token is printed as well.
+string r2 0 0 1
+# With an alias: the root is printed with the name of the alias.
+string r2 20 1 0
+string r2 20 0 0
+# The field names of a production: the pair production has the fields key and
+# value.
+leaf r3 8 0:0:0 1:0:1 1 3 0 0 0
+leaf r4 10 0:0:0 1:0:1 1 4 0 0 0
+node r5 18 1 r3 r4
+string r5 0 0 1
+string r5 0 0 0
+# A leaf without children.
+leaf r6 11 0:0:0 1:0:1 1 5 0 0 0
+string r6 0 0 0
+string r6 0 0 1

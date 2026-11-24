@@ -1,0 +1,21 @@
+# Stack: the dot graph of ts_stack_print_dot_graph. A node whose only link is an extra subtree
+# is a point; the extra link is grey; a pending link is dashed; a paused head is red; a halted
+# head is not printed; the summary is printed on the head.
+# language: json
+lang json
+snew
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+setextra r0 1
+spush 0 r0 0 1
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+spush 0 r1 1 1
+scopy 0
+leaf r2 10 0:0:0 1:0:1 1 1 0 0 0
+spush 1 r2 0 3
+spause 1 -
+scopy 0
+shalt 2
+ssummary 0 2
+sgraph
+sdump
+sdelete

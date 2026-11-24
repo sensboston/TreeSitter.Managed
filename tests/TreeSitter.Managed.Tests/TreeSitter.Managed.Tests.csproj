@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>$(TsTestTargets)</TargetFrameworks>
+    <RootNamespace>TreeSitter.Tests</RootNamespace>
+    <IsTestProject>true</IsTestProject>
+    <!-- LibraryImport (test-only native oracle) needs unsafe blocks. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Test code uses underscores in names and does not need library-level analyzers. -->
+    <NoWarn>$(NoWarn);CA1707;CA1515;CA1861</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/TreeSitter.Managed/TreeSitter.Managed.csproj" />
+    <ProjectReference Include="../../src/TreeSitter.Managed.Generator/TreeSitter.Managed.Generator.csproj" />
+    <ProjectReference Include="../../grammars/C/TreeSitter.Managed.Grammars.C.csproj" />
+    <ProjectReference Include="../../grammars/Json/TreeSitter.Managed.Grammars.Json.csproj" />
+    <ProjectReference Include="../../grammars/Python/TreeSitter.Managed.Grammars.Python.csproj" />
+    <ProjectReference Include="../../grammars/Go/TreeSitter.Managed.Grammars.Go.csproj" />
+    <ProjectReference Include="../../grammars/Java/TreeSitter.Managed.Grammars.Java.csproj" />
+    <ProjectReference Include="../../grammars/Cpp/TreeSitter.Managed.Grammars.Cpp.csproj" />
+    <ProjectReference Include="../../grammars/CSharp/TreeSitter.Managed.Grammars.CSharp.csproj" />
+    <ProjectReference Include="../../grammars/Bash/TreeSitter.Managed.Grammars.Bash.csproj" />
+    <ProjectReference Include="../../grammars/TypeScript/TreeSitter.Managed.Grammars.TypeScript.csproj" />
+    <ProjectReference Include="../../grammars/Tsx/TreeSitter.Managed.Grammars.Tsx.csproj" />
+    <ProjectReference Include="../../grammars/Yaml/TreeSitter.Managed.Grammars.Yaml.csproj" />
+    <ProjectReference Include="../../grammars/Toml/TreeSitter.Managed.Grammars.Toml.csproj" />
+    <ProjectReference Include="../../grammars/Markdown/TreeSitter.Managed.Grammars.Markdown.csproj" />
+    <ProjectReference Include="../../grammars/MarkdownInline/TreeSitter.Managed.Grammars.MarkdownInline.csproj" />
+    <ProjectReference Include="../../grammars/Css/TreeSitter.Managed.Grammars.Css.csproj" />
+    <ProjectReference Include="../../grammars/Rust/TreeSitter.Managed.Grammars.Rust.csproj" />
+    <ProjectReference Include="../../grammars/JavaScript/TreeSitter.Managed.Grammars.JavaScript.csproj" />
+    <ProjectReference Include="../../grammars/Html/TreeSitter.Managed.Grammars.Html.csproj" />
+  </ItemGroup>
+</Project>

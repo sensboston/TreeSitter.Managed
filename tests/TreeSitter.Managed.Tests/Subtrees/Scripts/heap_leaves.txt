@@ -1,0 +1,27 @@
+# Leaves that do not fit into SubtreeInlineData: one per condition of ts_subtree_can_inline.
+lang json
+leaf r0 10 255:0:255 1:0:1 1 1 0 0 0
+leaf r1 10 0:16:0 1:0:1 1 1 0 0 0
+leaf r2 10 0:0:0 255:0:255 1 1 0 0 0
+leaf r3 10 0:0:0 3:1:0 1 1 0 0 0
+leaf r4 10 0:0:0 1:0:1 16 1 0 0 0
+leaf r5 10 0:0:0 1:0:1 1 1 1 0 0
+leaf r6 11 0:0:0 4:0:4 1 1 0 1 1
+dump r0
+dump r1
+dump r2
+dump r3
+dump r4
+dump r5
+dump r6
+error r7 64 0:0:0 1:0:1 1 7
+missing r8 6 9 2:0:2 1
+dump r7
+dump r8
+extstate r5 0102030405
+dump r5
+extstate r5 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+dump r5
+errnode r9 0 r7 r8 r6
+dump r9
+string r9 0 0 1

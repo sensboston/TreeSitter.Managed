@@ -1,0 +1,20 @@
+# Stack: merging two nodes whose links are equivalent but lead to different nodes.
+# The nodes below the links are merged recursively (stack_node_add_link). The popped
+# slices are the two paths of the merged node: one per link of the state-2 nodes.
+# language: json
+lang json
+snew
+scopy 0
+leaf r0 1 0:0:0 1:0:1 1 1 0 0 0
+spush 1 r0 0 2
+scopy 0
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 2 r1 0 2
+leaf r2 10 0:0:0 1:0:1 1 1 0 0 0
+spush 1 r2 0 3
+leaf r3 10 0:0:0 1:0:1 1 1 0 0 0
+spush 2 r3 0 3
+smerge 1 2
+spopall 1 r20
+sdump
+sdelete

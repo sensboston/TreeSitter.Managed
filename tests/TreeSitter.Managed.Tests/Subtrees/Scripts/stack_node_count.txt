@@ -1,0 +1,22 @@
+# Stack: the node count since the last error. A NULL push sets the count at the last error;
+# a pop that goes back below it lowers that count (ts_stack_node_count_since_error). A node
+# of the error-repeat symbol adds to the count (stack__subtree_node_count).
+# language: json
+lang json
+snew
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+spush 0 r0 0 2
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+spush 0 r1 0 2
+spush 0 - 0 2
+leaf r2 10 0:0:0 1:0:1 1 1 0 0 0
+spush 0 r2 0 2
+sdump
+spopcount 0 3 r3
+sdump
+leaf r6 10 0:0:0 1:0:1 1 1 0 0 0
+leaf r7 10 0:0:0 1:0:1 1 1 0 0 0
+node r8 65534 0 r6 r7
+spush 0 r8 0 2
+sdump
+sdelete

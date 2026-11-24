@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The same smoke test, published for browser-wasm and run under node by the wasm CI job.
+    The sources are those of samples/TreeSitter.Managed.Smoke - there is nothing to keep in
+    sync but the project file, which carries the runtime identifier the console project must
+    not carry (it is built for every job of the test matrix).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!--
+      net10.0 only, on purpose: with the .NET 10 SDK, browser-wasm for net8.0 is a different
+      workload band (wasm-tools-net8), and a multi-targeted project asks for both at restore
+      time even when only one framework is published. The console project keeps both targets.
+    -->
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>TreeSitter.Smoke</RootNamespace>
+    <AssemblyName>TreeSitter.Managed.Smoke</AssemblyName>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishTrimmed>true</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IsPackable>false</IsPackable>
+    <!--
+      The native symbol map (_framework/dotnet.native.js.symbols) is only there to put names
+      back on a crashed native stack. The loader of a published app downloads every asset the
+      boot manifest lists, node cannot serve that one, and the run stops - so the app does not
+      ask for it. See WasmEmitSymbolMap in dotnet/runtime src/mono/wasm/features.md.
+    -->
+    <WasmEmitSymbolMap>false</WasmEmitSymbolMap>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../TreeSitter.Managed.Smoke/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/TreeSitter.Managed/TreeSitter.Managed.csproj" />
+    <ProjectReference Include="../../grammars/Bash/TreeSitter.Managed.Grammars.Bash.csproj" />
+    <ProjectReference Include="../../grammars/C/TreeSitter.Managed.Grammars.C.csproj" />
+    <ProjectReference Include="../../grammars/CSharp/TreeSitter.Managed.Grammars.CSharp.csproj" />
+    <ProjectReference Include="../../grammars/Cpp/TreeSitter.Managed.Grammars.Cpp.csproj" />
+    <ProjectReference Include="../../grammars/Css/TreeSitter.Managed.Grammars.Css.csproj" />
+    <ProjectReference Include="../../grammars/Go/TreeSitter.Managed.Grammars.Go.csproj" />
+    <ProjectReference Include="../../grammars/Html/TreeSitter.Managed.Grammars.Html.csproj" />
+    <ProjectReference Include="../../grammars/Java/TreeSitter.Managed.Grammars.Java.csproj" />
+    <ProjectReference Include="../../grammars/JavaScript/TreeSitter.Managed.Grammars.JavaScript.csproj" />
+    <ProjectReference Include="../../grammars/Json/TreeSitter.Managed.Grammars.Json.csproj" />
+    <ProjectReference Include="../../grammars/Markdown/TreeSitter.Managed.Grammars.Markdown.csproj" />
+    <ProjectReference Include="../../grammars/MarkdownInline/TreeSitter.Managed.Grammars.MarkdownInline.csproj" />
+    <ProjectReference Include="../../grammars/Python/TreeSitter.Managed.Grammars.Python.csproj" />
+    <ProjectReference Include="../../grammars/Rust/TreeSitter.Managed.Grammars.Rust.csproj" />
+    <ProjectReference Include="../../grammars/Toml/TreeSitter.Managed.Grammars.Toml.csproj" />
+    <ProjectReference Include="../../grammars/Tsx/TreeSitter.Managed.Grammars.Tsx.csproj" />
+    <ProjectReference Include="../../grammars/TypeScript/TreeSitter.Managed.Grammars.TypeScript.csproj" />
+    <ProjectReference Include="../../grammars/Yaml/TreeSitter.Managed.Grammars.Yaml.csproj" />
+  </ItemGroup>
+</Project>

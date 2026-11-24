@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.ps1 text eol=crlf
+
+# Vendored upstream sources are stored byte for byte (corpus files may use CRLF on purpose).
+grammars/*/upstream/** -text
+tests/Oracle/tree-sitter/** -text

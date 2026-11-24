@@ -1,0 +1,49 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <IsPackable>false</IsPackable>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+
+    <TsLibraryTargets>net8.0;net10.0</TsLibraryTargets>
+    <TsTestTargets>net8.0;net10.0</TsTestTargets>
+    <TsRepoDir>$(MSBuildThisFileDirectory.Replace('\', '/'))</TsRepoDir>
+    <TsProjectDir>$(MSBuildProjectDirectory.Replace('\', '/'))/</TsProjectDir>
+    <!-- Shipped libraries: the runtime under src/ (not the generator) and every grammar under grammars/. -->
+    <TsIsLibrary Condition="$(TsProjectDir.StartsWith('$(TsRepoDir)src/')) and '$(MSBuildProjectName)' != 'TreeSitter.Managed.Generator'">true</TsIsLibrary>
+    <TsIsLibrary Condition="$(TsProjectDir.StartsWith('$(TsRepoDir)grammars/'))">true</TsIsLibrary>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TsIsLibrary)' == 'true'">
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <TargetFrameworks>$(TsLibraryTargets)</TargetFrameworks>
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Authors>SeNS</Authors>
+    <Copyright>Copyright (c) 2026 SeNS</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <IsPackable>true</IsPackable>
+    <PackageId>$(MSBuildProjectName)</PackageId>
+    <PackageProjectUrl>https://github.com/sensboston/TreeSitter.Managed</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/sensboston/TreeSitter.Managed</RepositoryUrl>
+    <PackageTags>tree-sitter;parser;incremental;syntax-tree;query;managed</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TsIsLibrary)' == 'true'">
+    <None Include="$(TsRepoDir)README.md" Pack="true" PackagePath="/" Visible="false" />
+    <None Include="$(TsRepoDir)THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="/" Visible="false" />
+  </ItemGroup>
+
+  <!-- Grammar packages: the query files as embedded resources (<Name>Grammar.Query) and the grammar license. -->
+  <ItemGroup Condition="$(TsProjectDir.StartsWith('$(TsRepoDir)grammars/'))">
+    <EmbeddedResource Include="upstream/queries/*.scm" LogicalName="queries/%(Filename)%(Extension)" />
+    <None Include="upstream/LICENSE" Pack="true" PackagePath="grammar/" Visible="false" />
+  </ItemGroup>
+</Project>

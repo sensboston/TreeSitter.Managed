@@ -1,0 +1,58 @@
+# A multi-byte character cut by the border of a chunk (lexer.c: ts_lexer__get_lookahead,
+# the size < 4 retry and the TS_DECODE_ERROR of the end of the input)
+input utf8 1 e282ac41
+reset 0:0:0
+start
+dump
+advance 0
+dump
+advance 0
+dump
+advance 0
+dump
+eof
+finish 0
+dump
+# Two bytes of a three byte character at the end of the input, chunk of 1
+input utf8 1 41e282
+reset 0:0:0
+start
+advance 0
+dump
+advance 0
+dump
+finish 4
+dump
+# Three bytes of a four byte character at the end of the input, chunk of 2
+input utf8 2 41f09f98
+reset 0:0:0
+start
+advance 0
+column
+dump
+advance 0
+dump
+finish 0
+# An invalid lead byte in the middle of the input, and at the end of a chunk
+input utf8 2 41ff42
+reset 0:0:0
+start
+advance 0
+dump
+advance 0
+dump
+advance 0
+eof
+finish 1
+# A truncated UTF-16 code unit cut by a chunk of one byte
+input utf16le 1 41003dd8
+reset 0:0:0
+start
+advance 0
+dump
+advance 0
+dump
+advance 0
+dump
+finish 0
+dump

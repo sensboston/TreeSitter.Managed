@@ -1,0 +1,25 @@
+# The external scanner state of an external token.
+# The state is stored in the union of the heap data, so it belongs to a leaf
+# without children. The Python grammar has external tokens (_indent, _dedent,
+# _newline, ...).
+lang python
+# A short state fits into the inline buffer of 24 bytes.
+leaf r0 102 0:0:0 1:0:1 1 1 1 0 0
+extstate r0 0102030405
+dump r0
+# The state of 24 bytes is the last one that fits into the buffer.
+leaf r1 102 0:0:0 1:0:1 1 1 1 0 0
+extstate r1 000102030405060708090a0b0c0d0e0f101112131415161718
+dump r1
+# A longer state is kept in its own array.
+leaf r2 102 0:0:0 1:0:1 1 1 1 0 0
+extstate r2 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+dump r2
+# The empty state.
+leaf r3 102 0:0:0 1:0:1 1 1 1 0 0
+extstate r3 -
+dump r3
+# A node with children has no state of its own: the union belongs to the
+# summary of the node.
+node r4 108 0 r0
+dump r4

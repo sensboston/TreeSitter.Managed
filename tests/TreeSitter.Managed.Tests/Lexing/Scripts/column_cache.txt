@@ -1,0 +1,40 @@
+# The column cache: valid, invalidated by a reset and rebuilt by ts_lexer__get_column
+# (lexer.c: ts_lexer__set_column_data, ts_lexer__invalidate_column_data, ts_lexer__get_column)
+input utf8 0 6162630a6465660a6768690ac3a9c3a9
+reset 0:0:0
+start
+column
+advance 0
+advance 0
+column
+advance 0
+column
+advance 0
+column
+advance 0
+column
+# A reset to another byte invalidates the cache, a reset to the same byte does not
+reset 4:1:0
+column
+advance 0
+column
+reset 4:1:0
+column
+advance 0
+column
+reset 8:2:0
+column
+advance 0
+advance 0
+column
+# A reset without a correct row and column: the cache is rebuilt from the byte only
+reset 10:0:0
+column
+reset 11:7:7
+column
+advance 0
+column
+advance 0
+column
+eof
+column

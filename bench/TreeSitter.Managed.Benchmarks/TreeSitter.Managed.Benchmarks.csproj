@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>TreeSitter.Benchmarks</RootNamespace>
+    <!-- LibraryImport of the native runtime (the oracle library) needs unsafe blocks. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);CA1515;CA1822;CA1707</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/TreeSitter.Managed/TreeSitter.Managed.csproj" />
+    <ProjectReference Include="../../grammars/C/TreeSitter.Managed.Grammars.C.csproj" />
+    <ProjectReference Include="../../grammars/Json/TreeSitter.Managed.Grammars.Json.csproj" />
+    <ProjectReference Include="../../grammars/Python/TreeSitter.Managed.Grammars.Python.csproj" />
+  </ItemGroup>
+</Project>

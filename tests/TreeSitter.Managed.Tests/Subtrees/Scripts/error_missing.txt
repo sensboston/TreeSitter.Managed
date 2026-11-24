@@ -1,0 +1,39 @@
+# Error leaves, missing leaves and an error node.
+lang json
+# An error leaf: the character that was not expected is part of the node.
+error r0 64 0:0:0 1:0:1 1 1
+error r1 -1 0:0:0 1:0:1 1 1
+# An error leaf without a size has no unexpected character.
+error r2 10 0:0:0 0:0:0 1 1
+dump r0
+dump r1
+dump r2
+string r0 0 0 1
+string r1 0 0 1
+string r2 0 0 1
+# A missing leaf: its size is zero, the padding is the space in front of it.
+missing r3 6 9 2:0:2 1
+missing r4 10 9 0:0:0 1
+# A missing leaf that does not fit into the inline data.
+missing r5 10 9 255:0:255 1
+dump r3
+dump r4
+dump r5
+string r3 0 0 1
+string r4 0 0 1
+string r5 0 0 1
+# An error node with children: the children are the error leaf and the
+# missing leaf. The node owns them, so their registers are empty afterwards.
+errnode r6 0 r0 r3
+dump r6
+string r6 0 0 1
+# An error node that is extra.
+error r7 64 0:0:0 1:0:1 1 1
+missing r8 6 9 2:0:2 1
+errnode r9 1 r7 r8
+dump r9
+string r9 0 0 1
+# An error node with a single child.
+missing r10 10 9 0:0:0 1
+errnode r11 0 r10
+dump r11

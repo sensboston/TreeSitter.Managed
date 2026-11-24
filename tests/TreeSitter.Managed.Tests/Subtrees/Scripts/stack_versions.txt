@@ -1,0 +1,36 @@
+# Stack: copy, merge, pause and resume, halt, summary, error states.
+lang json
+snew
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+spush 0 r0 0 1
+scopy 0
+leaf r1 10 0:0:0 1:0:1 1 2 0 0 0
+spush 0 r1 0 2
+leaf r2 10 0:0:0 1:0:1 1 2 0 0 0
+spush 1 r2 0 2
+scanmerge 0 1
+smerge 0 1
+sdump
+sgraph
+scopy 0
+spush 1 - 0 0
+error r3 97 0:0:0 1:0:1 1 0
+spush 1 r3 0 0
+sdump
+spoperror 1 r10
+leaf r4 10 0:0:0 1:0:1 1 3 0 0 0
+spause 0 r4
+sdump
+sresume 0 r5
+dump r5
+ssummary 1 4
+sdump
+leaf r6 10 0:0:0 1:0:1 1 3 1 0 0
+extstate r6 0102
+sext 0 r6
+shalt 1
+sdump
+sremove 1
+sclear
+sdump
+sdelete

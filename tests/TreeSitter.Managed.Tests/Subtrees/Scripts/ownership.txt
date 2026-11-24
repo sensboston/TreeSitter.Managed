@@ -1,0 +1,33 @@
+# The ownership of the subtrees: retain, release, make_mut and clone.
+lang json
+# A heap leaf with one owner.
+leaf r0 10 255:0:255 1:0:1 1 1 0 0 0
+dump r0
+# make_mut of a node with one owner keeps the node.
+mut r0
+dump r0
+# dup shares the node: the reference count grows.
+dup r1 r0
+dump r0
+dump r1
+# make_mut of a shared node copies it: the copy is a new node.
+mut r0
+dump r0
+dump r1
+# clone always copies the node.
+clone r2 r1
+dump r2
+# The copy has its own children.
+leaf r3 10 0:0:0 1:0:1 1 2 0 0 0
+node r4 19 0 r0 r3
+clone r5 r4
+dump r5
+# Releasing one owner keeps the node alive.
+release r1
+dump r5
+release r2
+dump r5
+release r5
+# The last owner releases the node: it is gone. The node r4 owns the copy r0
+# and the leaf r3, so they are released with it.
+release r4

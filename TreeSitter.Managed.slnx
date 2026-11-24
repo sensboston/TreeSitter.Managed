@@ -1,0 +1,38 @@
+<Solution>
+  <Folder Name="/grammars/" />
+  <Folder Name="/grammars/Json/">
+    <Project Path="grammars/C/TreeSitter.Managed.Grammars.C.csproj" />
+    <Project Path="grammars/Json/TreeSitter.Managed.Grammars.Json.csproj" />
+    <Project Path="grammars/Python/TreeSitter.Managed.Grammars.Python.csproj" />
+    <Project Path="grammars/Go/TreeSitter.Managed.Grammars.Go.csproj" />
+    <Project Path="grammars/Java/TreeSitter.Managed.Grammars.Java.csproj" />
+    <Project Path="grammars/Cpp/TreeSitter.Managed.Grammars.Cpp.csproj" />
+    <Project Path="grammars/CSharp/TreeSitter.Managed.Grammars.CSharp.csproj" />
+    <Project Path="grammars/Bash/TreeSitter.Managed.Grammars.Bash.csproj" />
+    <Project Path="grammars/TypeScript/TreeSitter.Managed.Grammars.TypeScript.csproj" />
+    <Project Path="grammars/Tsx/TreeSitter.Managed.Grammars.Tsx.csproj" />
+    <Project Path="grammars/Yaml/TreeSitter.Managed.Grammars.Yaml.csproj" />
+    <Project Path="grammars/Toml/TreeSitter.Managed.Grammars.Toml.csproj" />
+    <Project Path="grammars/Markdown/TreeSitter.Managed.Grammars.Markdown.csproj" />
+    <Project Path="grammars/MarkdownInline/TreeSitter.Managed.Grammars.MarkdownInline.csproj" />
+    <Project Path="grammars/Css/TreeSitter.Managed.Grammars.Css.csproj" />
+    <Project Path="grammars/Rust/TreeSitter.Managed.Grammars.Rust.csproj" />
+    <Project Path="grammars/JavaScript/TreeSitter.Managed.Grammars.JavaScript.csproj" />
+    <Project Path="grammars/Html/TreeSitter.Managed.Grammars.Html.csproj" />
+  </Folder>
+  <Folder Name="/bench/">
+    <Project Path="bench/TreeSitter.Managed.Benchmarks/TreeSitter.Managed.Benchmarks.csproj" />
+  </Folder>
+  <!-- TreeSitter.Managed.Smoke.Wasm is not here: it pins RuntimeIdentifier=browser-wasm and
+       the wasm job publishes it on its own. -->
+  <Folder Name="/samples/">
+    <Project Path="samples/TreeSitter.Managed.Smoke/TreeSitter.Managed.Smoke.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/TreeSitter.Managed.Generator/TreeSitter.Managed.Generator.csproj" />
+    <Project Path="src/TreeSitter.Managed/TreeSitter.Managed.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TreeSitter.Managed.Tests/TreeSitter.Managed.Tests.csproj" />
+  </Folder>
+</Solution>

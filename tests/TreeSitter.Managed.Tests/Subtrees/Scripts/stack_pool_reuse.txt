@@ -1,0 +1,487 @@
+# Stack: nodes freed at once (more than MAX_NODE_POOL_SIZE = 50), then nodes reused
+# from the pool. Each copy gets a node of its own, freed when the copy is removed.
+# language: json
+lang json
+snew
+scopy 0
+leaf r0 1 0:0:0 1:0:1 1 1 0 0 0
+spush 1 r0 0 2
+scopy 0
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 2 r1 0 2
+scopy 0
+leaf r2 3 0:0:0 1:0:1 1 1 0 0 0
+spush 3 r2 0 2
+scopy 0
+leaf r3 4 0:0:0 1:0:1 1 1 0 0 0
+spush 4 r3 0 2
+scopy 0
+leaf r4 5 0:0:0 1:0:1 1 1 0 0 0
+spush 5 r4 0 2
+scopy 0
+leaf r5 6 0:0:0 1:0:1 1 1 0 0 0
+spush 6 r5 0 2
+scopy 0
+leaf r6 7 0:0:0 1:0:1 1 1 0 0 0
+spush 7 r6 0 2
+scopy 0
+leaf r7 8 0:0:0 1:0:1 1 1 0 0 0
+spush 8 r7 0 2
+scopy 0
+leaf r0 9 0:0:0 1:0:1 1 1 0 0 0
+spush 9 r0 0 2
+scopy 0
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 10 r1 0 2
+scopy 0
+leaf r2 2 0:0:0 1:0:1 1 1 0 0 0
+spush 11 r2 0 2
+scopy 0
+leaf r3 3 0:0:0 1:0:1 1 1 0 0 0
+spush 12 r3 0 2
+scopy 0
+leaf r4 4 0:0:0 1:0:1 1 1 0 0 0
+spush 13 r4 0 2
+scopy 0
+leaf r5 5 0:0:0 1:0:1 1 1 0 0 0
+spush 14 r5 0 2
+scopy 0
+leaf r6 6 0:0:0 1:0:1 1 1 0 0 0
+spush 15 r6 0 2
+scopy 0
+leaf r7 7 0:0:0 1:0:1 1 1 0 0 0
+spush 16 r7 0 2
+scopy 0
+leaf r0 8 0:0:0 1:0:1 1 1 0 0 0
+spush 17 r0 0 2
+scopy 0
+leaf r1 9 0:0:0 1:0:1 1 1 0 0 0
+spush 18 r1 0 2
+scopy 0
+leaf r2 1 0:0:0 1:0:1 1 1 0 0 0
+spush 19 r2 0 2
+scopy 0
+leaf r3 2 0:0:0 1:0:1 1 1 0 0 0
+spush 20 r3 0 2
+scopy 0
+leaf r4 3 0:0:0 1:0:1 1 1 0 0 0
+spush 21 r4 0 2
+scopy 0
+leaf r5 4 0:0:0 1:0:1 1 1 0 0 0
+spush 22 r5 0 2
+scopy 0
+leaf r6 5 0:0:0 1:0:1 1 1 0 0 0
+spush 23 r6 0 2
+scopy 0
+leaf r7 6 0:0:0 1:0:1 1 1 0 0 0
+spush 24 r7 0 2
+scopy 0
+leaf r0 7 0:0:0 1:0:1 1 1 0 0 0
+spush 25 r0 0 2
+scopy 0
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 26 r1 0 2
+scopy 0
+leaf r2 9 0:0:0 1:0:1 1 1 0 0 0
+spush 27 r2 0 2
+scopy 0
+leaf r3 1 0:0:0 1:0:1 1 1 0 0 0
+spush 28 r3 0 2
+scopy 0
+leaf r4 2 0:0:0 1:0:1 1 1 0 0 0
+spush 29 r4 0 2
+scopy 0
+leaf r5 3 0:0:0 1:0:1 1 1 0 0 0
+spush 30 r5 0 2
+scopy 0
+leaf r6 4 0:0:0 1:0:1 1 1 0 0 0
+spush 31 r6 0 2
+scopy 0
+leaf r7 5 0:0:0 1:0:1 1 1 0 0 0
+spush 32 r7 0 2
+scopy 0
+leaf r0 6 0:0:0 1:0:1 1 1 0 0 0
+spush 33 r0 0 2
+scopy 0
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 34 r1 0 2
+scopy 0
+leaf r2 8 0:0:0 1:0:1 1 1 0 0 0
+spush 35 r2 0 2
+scopy 0
+leaf r3 9 0:0:0 1:0:1 1 1 0 0 0
+spush 36 r3 0 2
+scopy 0
+leaf r4 1 0:0:0 1:0:1 1 1 0 0 0
+spush 37 r4 0 2
+scopy 0
+leaf r5 2 0:0:0 1:0:1 1 1 0 0 0
+spush 38 r5 0 2
+scopy 0
+leaf r6 3 0:0:0 1:0:1 1 1 0 0 0
+spush 39 r6 0 2
+scopy 0
+leaf r7 4 0:0:0 1:0:1 1 1 0 0 0
+spush 40 r7 0 2
+scopy 0
+leaf r0 5 0:0:0 1:0:1 1 1 0 0 0
+spush 41 r0 0 2
+scopy 0
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 42 r1 0 2
+scopy 0
+leaf r2 7 0:0:0 1:0:1 1 1 0 0 0
+spush 43 r2 0 2
+scopy 0
+leaf r3 8 0:0:0 1:0:1 1 1 0 0 0
+spush 44 r3 0 2
+scopy 0
+leaf r4 9 0:0:0 1:0:1 1 1 0 0 0
+spush 45 r4 0 2
+scopy 0
+leaf r5 1 0:0:0 1:0:1 1 1 0 0 0
+spush 46 r5 0 2
+scopy 0
+leaf r6 2 0:0:0 1:0:1 1 1 0 0 0
+spush 47 r6 0 2
+scopy 0
+leaf r7 3 0:0:0 1:0:1 1 1 0 0 0
+spush 48 r7 0 2
+scopy 0
+leaf r0 4 0:0:0 1:0:1 1 1 0 0 0
+spush 49 r0 0 2
+scopy 0
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 50 r1 0 2
+scopy 0
+leaf r2 6 0:0:0 1:0:1 1 1 0 0 0
+spush 51 r2 0 2
+scopy 0
+leaf r3 7 0:0:0 1:0:1 1 1 0 0 0
+spush 52 r3 0 2
+scopy 0
+leaf r4 8 0:0:0 1:0:1 1 1 0 0 0
+spush 53 r4 0 2
+scopy 0
+leaf r5 9 0:0:0 1:0:1 1 1 0 0 0
+spush 54 r5 0 2
+scopy 0
+leaf r6 1 0:0:0 1:0:1 1 1 0 0 0
+spush 55 r6 0 2
+scopy 0
+leaf r7 2 0:0:0 1:0:1 1 1 0 0 0
+spush 56 r7 0 2
+scopy 0
+leaf r0 3 0:0:0 1:0:1 1 1 0 0 0
+spush 57 r0 0 2
+scopy 0
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 58 r1 0 2
+scopy 0
+leaf r2 5 0:0:0 1:0:1 1 1 0 0 0
+spush 59 r2 0 2
+scopy 0
+leaf r3 6 0:0:0 1:0:1 1 1 0 0 0
+spush 60 r3 0 2
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+scopy 0
+leaf r0 1 0:0:0 1:0:1 1 1 0 0 0
+spush 1 r0 0 2
+scopy 0
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 2 r1 0 2
+scopy 0
+leaf r2 3 0:0:0 1:0:1 1 1 0 0 0
+spush 3 r2 0 2
+scopy 0
+leaf r3 4 0:0:0 1:0:1 1 1 0 0 0
+spush 4 r3 0 2
+scopy 0
+leaf r4 5 0:0:0 1:0:1 1 1 0 0 0
+spush 5 r4 0 2
+scopy 0
+leaf r5 6 0:0:0 1:0:1 1 1 0 0 0
+spush 6 r5 0 2
+scopy 0
+leaf r6 7 0:0:0 1:0:1 1 1 0 0 0
+spush 7 r6 0 2
+scopy 0
+leaf r7 8 0:0:0 1:0:1 1 1 0 0 0
+spush 8 r7 0 2
+scopy 0
+leaf r0 9 0:0:0 1:0:1 1 1 0 0 0
+spush 9 r0 0 2
+scopy 0
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 10 r1 0 2
+scopy 0
+leaf r2 2 0:0:0 1:0:1 1 1 0 0 0
+spush 11 r2 0 2
+scopy 0
+leaf r3 3 0:0:0 1:0:1 1 1 0 0 0
+spush 12 r3 0 2
+scopy 0
+leaf r4 4 0:0:0 1:0:1 1 1 0 0 0
+spush 13 r4 0 2
+scopy 0
+leaf r5 5 0:0:0 1:0:1 1 1 0 0 0
+spush 14 r5 0 2
+scopy 0
+leaf r6 6 0:0:0 1:0:1 1 1 0 0 0
+spush 15 r6 0 2
+scopy 0
+leaf r7 7 0:0:0 1:0:1 1 1 0 0 0
+spush 16 r7 0 2
+scopy 0
+leaf r0 8 0:0:0 1:0:1 1 1 0 0 0
+spush 17 r0 0 2
+scopy 0
+leaf r1 9 0:0:0 1:0:1 1 1 0 0 0
+spush 18 r1 0 2
+scopy 0
+leaf r2 1 0:0:0 1:0:1 1 1 0 0 0
+spush 19 r2 0 2
+scopy 0
+leaf r3 2 0:0:0 1:0:1 1 1 0 0 0
+spush 20 r3 0 2
+scopy 0
+leaf r4 3 0:0:0 1:0:1 1 1 0 0 0
+spush 21 r4 0 2
+scopy 0
+leaf r5 4 0:0:0 1:0:1 1 1 0 0 0
+spush 22 r5 0 2
+scopy 0
+leaf r6 5 0:0:0 1:0:1 1 1 0 0 0
+spush 23 r6 0 2
+scopy 0
+leaf r7 6 0:0:0 1:0:1 1 1 0 0 0
+spush 24 r7 0 2
+scopy 0
+leaf r0 7 0:0:0 1:0:1 1 1 0 0 0
+spush 25 r0 0 2
+scopy 0
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 26 r1 0 2
+scopy 0
+leaf r2 9 0:0:0 1:0:1 1 1 0 0 0
+spush 27 r2 0 2
+scopy 0
+leaf r3 1 0:0:0 1:0:1 1 1 0 0 0
+spush 28 r3 0 2
+scopy 0
+leaf r4 2 0:0:0 1:0:1 1 1 0 0 0
+spush 29 r4 0 2
+scopy 0
+leaf r5 3 0:0:0 1:0:1 1 1 0 0 0
+spush 30 r5 0 2
+scopy 0
+leaf r6 4 0:0:0 1:0:1 1 1 0 0 0
+spush 31 r6 0 2
+scopy 0
+leaf r7 5 0:0:0 1:0:1 1 1 0 0 0
+spush 32 r7 0 2
+scopy 0
+leaf r0 6 0:0:0 1:0:1 1 1 0 0 0
+spush 33 r0 0 2
+scopy 0
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 34 r1 0 2
+scopy 0
+leaf r2 8 0:0:0 1:0:1 1 1 0 0 0
+spush 35 r2 0 2
+scopy 0
+leaf r3 9 0:0:0 1:0:1 1 1 0 0 0
+spush 36 r3 0 2
+scopy 0
+leaf r4 1 0:0:0 1:0:1 1 1 0 0 0
+spush 37 r4 0 2
+scopy 0
+leaf r5 2 0:0:0 1:0:1 1 1 0 0 0
+spush 38 r5 0 2
+scopy 0
+leaf r6 3 0:0:0 1:0:1 1 1 0 0 0
+spush 39 r6 0 2
+scopy 0
+leaf r7 4 0:0:0 1:0:1 1 1 0 0 0
+spush 40 r7 0 2
+scopy 0
+leaf r0 5 0:0:0 1:0:1 1 1 0 0 0
+spush 41 r0 0 2
+scopy 0
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 42 r1 0 2
+scopy 0
+leaf r2 7 0:0:0 1:0:1 1 1 0 0 0
+spush 43 r2 0 2
+scopy 0
+leaf r3 8 0:0:0 1:0:1 1 1 0 0 0
+spush 44 r3 0 2
+scopy 0
+leaf r4 9 0:0:0 1:0:1 1 1 0 0 0
+spush 45 r4 0 2
+scopy 0
+leaf r5 1 0:0:0 1:0:1 1 1 0 0 0
+spush 46 r5 0 2
+scopy 0
+leaf r6 2 0:0:0 1:0:1 1 1 0 0 0
+spush 47 r6 0 2
+scopy 0
+leaf r7 3 0:0:0 1:0:1 1 1 0 0 0
+spush 48 r7 0 2
+scopy 0
+leaf r0 4 0:0:0 1:0:1 1 1 0 0 0
+spush 49 r0 0 2
+scopy 0
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 50 r1 0 2
+scopy 0
+leaf r2 6 0:0:0 1:0:1 1 1 0 0 0
+spush 51 r2 0 2
+scopy 0
+leaf r3 7 0:0:0 1:0:1 1 1 0 0 0
+spush 52 r3 0 2
+scopy 0
+leaf r4 8 0:0:0 1:0:1 1 1 0 0 0
+spush 53 r4 0 2
+scopy 0
+leaf r5 9 0:0:0 1:0:1 1 1 0 0 0
+spush 54 r5 0 2
+scopy 0
+leaf r6 1 0:0:0 1:0:1 1 1 0 0 0
+spush 55 r6 0 2
+scopy 0
+leaf r7 2 0:0:0 1:0:1 1 1 0 0 0
+spush 56 r7 0 2
+scopy 0
+leaf r0 3 0:0:0 1:0:1 1 1 0 0 0
+spush 57 r0 0 2
+scopy 0
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 58 r1 0 2
+scopy 0
+leaf r2 5 0:0:0 1:0:1 1 1 0 0 0
+spush 59 r2 0 2
+scopy 0
+leaf r3 6 0:0:0 1:0:1 1 1 0 0 0
+spush 60 r3 0 2
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sremove 1
+sdump
+sdelete

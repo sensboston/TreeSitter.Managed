@@ -1,0 +1,153 @@
+# Stack: stack__subtree_is_equivalent and stack_node_add_link, one field at a time. Each block
+# starts with snew and merges two versions whose links differ in one field only (padding,
+# size, child count, extra, external scanner state), then the equal cases: the same node
+# pair, the recursive merge of two different previous nodes, error subtrees (both have an
+# error cost), a state 0 merge (ERROR_STATE: the count at the last error moves), a NULL
+# subtree against a real one, and different symbols. No merge involves two NULL links.
+# language: json
+lang json
+
+# padding differs
+snew
+scopy 0
+leaf r0 10 0:0:0 2:0:2 1 1 0 0 0
+spush 0 r0 0 1
+leaf r1 10 1:0:1 1:0:1 1 1 0 0 0
+spush 1 r1 0 1
+smerge 0 1
+sdump
+
+# size differs, and a node with two links for the graph
+snew
+scopy 0
+leaf r2 10 0:0:0 2:0:2 1 1 0 0 0
+spush 0 r2 0 1
+leaf r3 10 0:0:0 1:0:1 1 1 0 0 0
+spush 1 r3 0 1
+leaf r4 10 0:0:0 1:0:1 1 1 0 0 0
+spush 1 r4 0 1
+smerge 0 1
+sgraph
+sdump
+
+# child count differs: a leaf and a node with one child of the same symbol and size
+snew
+scopy 0
+leaf r5 10 0:0:0 2:0:2 1 1 0 0 0
+spush 0 r5 0 1
+leaf r6 10 0:0:0 2:0:2 1 1 0 0 0
+node r7 10 0 r6
+spush 1 r7 0 1
+smerge 0 1
+sdump
+
+# extra differs
+snew
+scopy 0
+leaf r8 10 0:0:0 2:0:2 1 1 0 0 0
+spush 0 r8 0 1
+leaf r9 10 0:0:0 2:0:2 1 1 0 0 0
+setextra r9 1
+spush 1 r9 0 1
+smerge 0 1
+sdump
+
+# external scanner state differs
+snew
+scopy 0
+leaf r10 10 0:0:0 2:0:2 1 1 1 0 0
+extstate r10 01
+spush 0 r10 0 1
+leaf r11 10 0:0:0 2:0:2 1 1 1 0 0
+extstate r11 02
+spush 1 r11 0 1
+smerge 0 1
+sdump
+
+# equal subtrees on the same node pair: the merge keeps one link
+snew
+scopy 0
+leaf r12 10 0:0:0 2:0:2 1 1 0 0 0
+spush 0 r12 0 1
+leaf r13 10 0:0:0 2:0:2 1 1 0 0 0
+spush 1 r13 0 1
+smerge 0 1
+sdump
+
+# equal subtrees on different previous nodes: the previous nodes merge recursively
+snew
+scopy 0
+leaf r14 11 0:0:0 1:0:1 1 1 0 0 0
+spush 0 r14 0 1
+leaf r15 10 0:0:0 1:0:1 1 1 0 0 0
+spush 0 r15 0 1
+leaf r16 11 0:0:0 1:0:1 1 1 0 0 0
+spush 1 r16 0 1
+leaf r17 10 0:0:0 1:0:1 1 1 0 0 0
+spush 1 r17 0 1
+smerge 0 1
+sdump
+
+# error subtrees: both have an error cost, so they are equivalent; the state is ERROR_STATE
+snew
+scopy 0
+error r18 64 0:0:0 2:0:2 1 0
+spush 0 r18 0 0
+error r19 64 0:0:0 2:0:2 1 0
+spush 1 r19 0 0
+smerge 0 1
+sdump
+
+# a NULL subtree against a real one: not equivalent, the NULL link is appended
+snew
+scopy 0
+leaf r20 10 0:0:0 0:0:0 1 1 0 0 0
+spush 0 r20 0 1
+spush 1 - 0 1
+smerge 0 1
+sgraph
+sdump
+
+# the other way round: the NULL link is the existing one
+snew
+scopy 0
+spush 0 - 0 1
+leaf r21 10 0:0:0 0:0:0 1 1 0 0 0
+spush 1 r21 0 1
+smerge 0 1
+sdump
+
+# different symbols
+snew
+scopy 0
+leaf r22 10 0:0:0 2:0:2 1 1 0 0 0
+spush 0 r22 0 1
+leaf r23 11 0:0:0 2:0:2 1 1 0 0 0
+spush 1 r23 0 1
+smerge 0 1
+sdump
+# the previous node of the equal subtree is the node itself: the recursive merge stops at
+# the link back to the same node
+snew
+leaf r24 11 0:0:0 1:0:1 1 1 0 0 0
+spush 0 r24 0 1
+scopy 0
+leaf r25 10 0:0:0 1:0:1 1 1 0 0 0
+spush 0 r25 0 1
+leaf r26 11 0:0:0 0:0:0 1 1 0 0 0
+spush 1 r26 0 1
+leaf r27 10 0:0:0 1:0:1 1 1 0 0 0
+spush 1 r27 0 1
+smerge 0 1
+sdump
+
+# the same subtree on two nodes: the first test of the equivalence holds
+snew
+scopy 0
+leaf r28 10 0:0:0 2:0:2 1 1 0 0 0
+dup r29 r28
+spush 0 r28 0 1
+spush 1 r29 0 1
+smerge 0 1
+sdump
+sdelete

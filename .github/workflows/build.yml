@@ -1,0 +1,365 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        tfm: [net8.0, net10.0]
+    runs-on: ${{ matrix.os }}
+    # The coverage job runs the instrumented runtime, several times slower.
+    timeout-minutes: ${{ (matrix.os == 'ubuntu-latest' && matrix.tfm == 'net10.0') && 90 || 60 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      # The native oracle harness is test-only and never shipped. Grammar sources in
+      # grammars/*/upstream are regenerated offline with tools/regen-grammar.sh and
+      # committed, so CI does not need network access beyond checkout.
+      - name: Build oracle
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          bash tools/build-oracle.sh 2>&1 | tee ci-logs/oracle.log
+          echo "TS_ORACLE_PATH=$GITHUB_WORKSPACE/artifacts/oracle" >> $GITHUB_ENV
+
+      - name: Build
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          dotnet build TreeSitter.Managed.slnx -c Release 2>&1 | tee ci-logs/build.log
+
+      # Generated grammar code must be reproducible and committed up to date.
+      - name: Check generated grammars
+        if: matrix.os == 'ubuntu-latest' && matrix.tfm == 'net10.0'
+        shell: bash
+        run: |
+          dotnet run --project src/TreeSitter.Managed.Generator -c Release -f net10.0 --no-build -- generate grammars/Json/upstream/src/parser.c --name Json --namespace TreeSitter.Grammars.Json --out grammars/Json/Generated --source "tree-sitter-json 254c42a6476413b776221e03982ac8ae159eeb72" 2>&1 | tee -a ci-logs/build.log
+          dotnet run --project src/TreeSitter.Managed.Generator -c Release -f net10.0 --no-build -- generate grammars/C/upstream/src/parser.c --name C --namespace TreeSitter.Grammars.C --out grammars/C/Generated --source "tree-sitter-c b780e47fc780ddc8da13afa35a3f4ed5c157823d" 2>&1 | tee -a ci-logs/build.log
+          dotnet run --project src/TreeSitter.Managed.Generator -c Release -f net10.0 --no-build -- generate grammars/Python/upstream/src/parser.c --name Python --namespace TreeSitter.Grammars.Python --out grammars/Python/Generated --source "tree-sitter-python 26855eabccb19c6abf499fbc5b8dc7cc9ab8bc64" 2>&1 | tee -a ci-logs/build.log
+          git diff --exit-code -- grammars/*/Generated 2>&1 | tee -a ci-logs/build.log
+
+      - name: Test (${{ matrix.tfm }})
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          # Coverage slows the tests down, so only the job that reports it collects it. The
+          # generated grammar tables (hundreds of thousands of lines) are not instrumented, and
+          # a line is counted once (SingleHit), not on every pass through the hot loops.
+          coverage=()
+          settings=()
+          if [ "${{ matrix.os }}" = ubuntu-latest ] && [ "${{ matrix.tfm }}" = net10.0 ]; then
+            coverage=(--collect:"XPlat Code Coverage")
+            settings=(-- 'DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.ExcludeByFile=**/Generated/*.g.cs' 'DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.SingleHit=true')
+          fi
+          dotnet test tests/TreeSitter.Managed.Tests -c Release -f ${{ matrix.tfm }} --no-build \
+            --logger "trx;LogFileName=results.trx" --logger "console;verbosity=normal" \
+            "${coverage[@]}" --results-directory TestResults "${settings[@]}" 2>&1 | tee ci-logs/test.log
+
+      # Coverage of the shipped code as a PR comment (one job of the matrix).
+      - name: Report coverage to PR
+        if: success() && github.event_name == 'pull_request' && matrix.os == 'ubuntu-latest' && matrix.tfm == 'net10.0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### Coverage (ubuntu / net10.0)"
+            echo
+            python3 tools/coverage-summary.py TestResults TreeSitter.Managed ts2cs
+          } > ci-logs/coverage.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file ci-logs/coverage.md
+
+      # Failure details as a PR comment: the API is easier to reach than the raw log storage.
+      - name: Report failure to PR
+        if: failure() && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### CI failure: ${{ matrix.os }} / ${{ matrix.tfm }}"
+            for f in ci-logs/oracle.log ci-logs/build.log ci-logs/test.log; do
+              [ -f "$f" ] || continue
+              echo
+              echo "#### $f (errors and last lines)"
+              echo '```'
+              if [ "$f" = ci-logs/test.log ]; then
+                # Each failed test with its message and stack, in order (not sorted).
+                awk '/^  Failed / { n = 30 } /^  Passed / { n = 0 } n > 0 { print; n-- }' "$f" | head -150 || true
+              else
+                grep -E "error|Error|FAIL|Failed|Assert|Exception" "$f" | sort -u | head -60 || true
+              fi
+              echo '--- tail ---'
+              tail -n 60 "$f"
+              echo '```'
+            done
+          } > ci-logs/comment.md
+          gh pr comment ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --body-file ci-logs/comment.md
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-${{ matrix.tfm }}
+          path: TestResults
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # M5-S5: the compilation modes a managed runtime is bought for. Both jobs run
+  # samples/TreeSitter.Managed.Smoke (every bundled grammar: parse, check the tree,
+  # run the highlights query) and compare its output with the JIT run of the same
+  # sources - byte for byte, because the program prints nothing but parse results.
+  # A warning-free publish log is the other half of the check: no IL2xxx/IL3xxx
+  # (trimming and AOT analysis) and no TRxxx/MTxxx (linker) warning is allowed, and
+  # none is suppressed, so a warning means the runtime or a grammar needs a fix.
+  # The wasm job installs the workload the SDK asks for (wasm-tools for the framework of
+  # the SDK itself); that is the answer to the question the task asks about the workload.
+  # ---------------------------------------------------------------------------
+  aot:
+    name: NativeAOT smoke (ubuntu / net10.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      smoke_tfm: net10.0
+      smoke_project: samples/TreeSitter.Managed.Smoke/TreeSitter.Managed.Smoke.csproj
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Install the toolchain of the AOT link step
+        shell: bash
+        run: |
+          # NativeAOT links with clang against zlib. The ubuntu images ship both, so this only
+          # covers an image that does not.
+          if ! printf 'int main(void) { return 0; }' | clang -x c - -lz -o "$RUNNER_TEMP/aot-probe" 2>/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y clang zlib1g-dev
+          fi
+
+      - name: JIT run (the reference output)
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          dotnet build "$smoke_project" -c Release -f "$smoke_tfm" 2>&1 | tee ci-logs/jit-build.log
+          dotnet run --project "$smoke_project" -c Release -f "$smoke_tfm" --no-build > ci-logs/jit.out 2> ci-logs/jit-run.log
+
+      - name: Publish NativeAOT
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          dotnet publish "$smoke_project" -c Release -f "$smoke_tfm" -r linux-x64 -p:PublishAot=true 2>&1 | tee ci-logs/aot-publish.log
+          if grep -nE "(warning|error)[[:space:]]+(IL|TR|MT)[0-9]{4}" ci-logs/aot-publish.log; then
+            echo "::error::the NativeAOT publish log is not warning-free (see aot-publish.log)"
+            exit 1
+          fi
+
+      - name: Run the AOT binary and compare with the JIT output
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          binary="samples/TreeSitter.Managed.Smoke/bin/Release/$smoke_tfm/linux-x64/publish/TreeSitter.Managed.Smoke"
+          "$binary" > ci-logs/aot.out 2> ci-logs/aot-run.log
+          diff -u ci-logs/jit.out ci-logs/aot.out
+          cat ci-logs/aot.out
+
+      - name: Report failure to PR
+        if: failure() && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### CI failure: aot (ubuntu / $smoke_tfm)"
+            for f in ci-logs/jit-build.log ci-logs/aot-publish.log ci-logs/aot-run.log ci-logs/jit-run.log; do
+              [ -f "$f" ] || continue
+              echo
+              echo "#### $f (errors, warnings and last lines)"
+              echo '```'
+              grep -nE "error|warning (IL|TR|MT)|FAIL|Exception" "$f" | sort -u | head -60 || true
+              echo '--- tail ---'
+              tail -n 40 "$f"
+              echo '```'
+            done
+            echo
+            echo "#### output diff (JIT vs AOT)"
+            echo '```'
+            diff -u ci-logs/jit.out ci-logs/aot.out 2>&1 || true
+            echo '```'
+          } > ci-logs/comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body-file ci-logs/comment.md
+
+      - name: Upload the smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aot-smoke-logs
+          path: ci-logs
+          if-no-files-found: ignore
+
+  wasm:
+    name: browser-wasm smoke (ubuntu / net10.0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      smoke_tfm: net10.0
+      smoke_project: samples/TreeSitter.Managed.Smoke/TreeSitter.Managed.Smoke.csproj
+      wasm_project: samples/TreeSitter.Managed.Smoke.Wasm/TreeSitter.Managed.Smoke.Wasm.csproj
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: JIT run (the reference output)
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          dotnet build "$smoke_project" -c Release -f "$smoke_tfm" 2>&1 | tee ci-logs/jit-build.log
+          dotnet run --project "$smoke_project" -c Release -f "$smoke_tfm" --no-build > ci-logs/jit.out 2> ci-logs/jit-run.log
+
+      - name: Publish browser-wasm (trimmed)
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          # -p:TargetFrameworks=<tfm> keeps the other framework leg of the referenced
+          # libraries out of the restore graph: browser-wasm for net8.0 is the wasm-tools-net8
+          # band of the SDK, and this job never builds that leg.
+          publish=(publish "$wasm_project" -c Release -f "$smoke_tfm" -r browser-wasm
+            -p:PublishTrimmed=true -p:TargetFrameworks="$smoke_tfm")
+          if ! dotnet "${publish[@]}" 2>&1 | tee ci-logs/wasm-publish.log; then
+            # The browser-wasm runtime pack is a workload pack: the SDK either restores it on
+            # its own or names the workload it misses (NETSDK1147). Only the second case needs
+            # an install, and it installs the workload the SDK asked for, which is wasm-tools
+            # for the framework of the SDK and wasm-tools-<band> for an older one.
+            workloads=$(grep -oE "must be installed: [^[]+" ci-logs/wasm-publish.log |
+              sed -E 's/^must be installed: //' | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ')
+            if [ -z "$workloads" ]; then
+              echo "::error::the browser-wasm publish failed without asking for a workload"
+              exit 1
+            fi
+            echo "==> the SDK asked for: $workloads" | tee -a ci-logs/wasm-publish.log
+            # The absolute path of the host, so that root uses the same SDK as the runner.
+            # shellcheck disable=SC2086
+            sudo "$(command -v dotnet)" workload install $workloads --skip-manifest-update 2>&1 |
+              tee ci-logs/wasm-workload.log
+            dotnet "${publish[@]}" 2>&1 | tee -a ci-logs/wasm-publish.log
+          fi
+          if grep -nE "(warning|error)[[:space:]]+(IL|TR|MT)[0-9]{4}" ci-logs/wasm-publish.log; then
+            echo "::error::the browser-wasm publish log is not warning-free (see wasm-publish.log)"
+            exit 1
+          fi
+
+      - name: Run under node and compare with the JIT output
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci-logs
+          out_dir="samples/TreeSitter.Managed.Smoke.Wasm/bin/Release/$smoke_tfm/browser-wasm"
+          # Where the loader of a wasm app that is not a Blazor app lives is the part of the
+          # story the SDK moves between versions (net10.0 publishes the app into an AppBundle
+          # directory and leaves the native build inputs in publish/), so the directory tree is
+          # logged and the loader is searched for instead of being assumed.
+          {
+            echo "== directories =="
+            find "$out_dir" -maxdepth 2 -type d | sort
+            echo "== the loader and the assemblies =="
+            find "$out_dir" \( -name 'dotnet*.js' -o -name '*.dll' \) | sort
+          } > ci-logs/wasm-layout.log 2>&1
+          tail -n 30 ci-logs/wasm-layout.log
+          loader=$(find "$out_dir" -type f -name dotnet.js -path "*/_framework/*" | head -1)
+          if [ -z "$loader" ]; then
+            echo "::error::no _framework/dotnet.js in the publish output (see wasm-layout.log)"
+            exit 1
+          fi
+          app_root=$(dirname "$(dirname "$loader")")
+          cp samples/TreeSitter.Managed.Smoke.Wasm/main.mjs "$app_root"/
+          echo "== $app_root ==" >> ci-logs/wasm-layout.log
+          ls "$app_root" "$app_root/_framework" | head -40 >> ci-logs/wasm-layout.log
+          # The loader of a published app downloads every asset the boot manifest lists. One of
+          # them, the native symbol map, is not served in this directory layout, and node then
+          # either reports it on stdout ("MONO_WASM: ...", see dotnet/runtime#90692) or, when
+          # the file is missing, stops the run. The app asks for no symbol map
+          # (WasmEmitSymbolMap=false in the project), and a line the runtime writes about itself
+          # is kept in wasm-mono.log and left out of the comparison, so that what is compared is
+          # the output of Program.Main and nothing else.
+          ( cd "$app_root" && node main.mjs ) > ci-logs/wasm.out 2> ci-logs/wasm-run.log
+          { grep '^MONO_WASM: ' ci-logs/wasm.out || true; } > ci-logs/wasm-mono.log
+          grep -v '^MONO_WASM: ' ci-logs/wasm.out > ci-logs/wasm.app.out
+          wc -l < ci-logs/wasm.app.out | tee ci-logs/wasm-lines.log
+          if [ -s ci-logs/wasm-mono.log ]; then
+            echo "::warning::the runtime wrote $(wc -l < ci-logs/wasm-mono.log) line(s) of its own to stdout"
+          fi
+          diff -u ci-logs/jit.out ci-logs/wasm.app.out
+          cat ci-logs/wasm.app.out
+
+      - name: Report failure to PR
+        if: failure() && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### CI failure: wasm (ubuntu / $smoke_tfm)"
+            for f in ci-logs/wasm-publish.log ci-logs/wasm-workload.log ci-logs/wasm-layout.log ci-logs/wasm-mono.log ci-logs/wasm-run.log ci-logs/jit-run.log; do
+              [ -f "$f" ] || continue
+              echo
+              echo "#### $f (errors, warnings and last lines)"
+              echo '```'
+              grep -E "error [A-Z]+[0-9]+|warning (IL|TR|MT)|FAIL|Exception|==> the SDK asked for" "$f" |
+                sed -E 's|/home/runner/work/[^/]*/[^/]*/||g' | sort -u | head -40 || true
+              echo '--- tail ---'
+              tail -n 40 "$f"
+              echo '```'
+            done
+            echo
+            echo "#### output diff (JIT vs wasm under node)"
+            echo '```'
+            diff -u ci-logs/jit.out ci-logs/wasm.app.out 2>&1 || true
+            echo '```'
+          } > ci-logs/comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --body-file ci-logs/comment.md
+
+      - name: Upload the smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-smoke-logs
+          path: ci-logs
+          if-no-files-found: ignore

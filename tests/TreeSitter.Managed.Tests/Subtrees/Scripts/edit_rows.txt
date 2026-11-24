@@ -1,0 +1,28 @@
+# Lookahead 16: the leaves stay on the heap, so the edit never turns an inline leaf into a heap node.
+# The edit that changes the rows: the text "ab" on row 0, a newline, and "c" on row 1.
+lang json
+leaf r0 10 0:0:0 2:0:2 16 1 0 0 0
+leaf r1 10 1:1:0 1:0:1 16 1 0 0 0
+node r2 19 0 r0 r1
+dump r2
+# A newline is inserted inside the first leaf: the rows of the rest move down.
+clone r3 r2
+edit r3 1:0:1 1:0:1 2:1:0
+dump r3
+# The newline is removed again: the second leaf goes back to row 0.
+clone r4 r3
+edit r4 1:0:1 2:1:0 1:0:1
+dump r4
+# A deletion of the newline that keeps the rest on the same row.
+clone r5 r2
+edit r5 2:0:2 3:1:0 2:0:2
+dump r5
+# Two lines inserted at the start of the second leaf.
+clone r6 r2
+edit r6 3:1:0 3:1:0 4:2:0
+dump r6
+release r2
+release r3
+release r4
+release r5
+release r6

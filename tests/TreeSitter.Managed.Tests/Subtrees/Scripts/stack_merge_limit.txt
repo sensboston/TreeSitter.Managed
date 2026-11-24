@@ -1,0 +1,50 @@
+# Stack: merges up to MAX_LINK_COUNT (8) links into one node. Version base stays
+# on the base node. The versions c1..c9 are copies of it with one leaf each (state 2);
+# c1 takes the links of the others, and the ninth merge finds the node full.
+# Then pop_all gives one slice per link.
+# language: json
+lang json
+snew
+scopy 0
+scopy 0
+scopy 0
+scopy 0
+scopy 0
+scopy 0
+scopy 0
+scopy 0
+scopy 0
+leaf r1 1 0:0:0 1:0:1 1 1 0 0 0
+spush 1 r1 0 2
+leaf r1 2 0:0:0 1:0:1 1 1 0 0 0
+spush 2 r1 0 2
+leaf r1 3 0:0:0 1:0:1 1 1 0 0 0
+spush 3 r1 0 2
+leaf r1 4 0:0:0 1:0:1 1 1 0 0 0
+spush 4 r1 0 2
+leaf r1 5 0:0:0 1:0:1 1 1 0 0 0
+spush 5 r1 0 2
+leaf r1 6 0:0:0 1:0:1 1 1 0 0 0
+spush 6 r1 0 2
+leaf r1 7 0:0:0 1:0:1 1 1 0 0 0
+spush 7 r1 0 2
+leaf r1 8 0:0:0 1:0:1 1 1 0 0 0
+spush 8 r1 0 2
+leaf r1 9 0:0:0 1:0:1 1 1 0 0 0
+spush 9 r1 0 2
+# base has state 1, c1 has state 2: no merge.
+scanmerge 0 1
+smerge 0 1
+smerge 1 2
+smerge 1 2
+smerge 1 2
+smerge 1 2
+smerge 1 2
+smerge 1 2
+smerge 1 2
+smerge 1 2
+sdump
+# Eight links: eight slices of one subtree each.
+spopall 1 r20
+sdump
+sdelete

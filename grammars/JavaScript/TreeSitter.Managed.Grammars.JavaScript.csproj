@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>TreeSitter.Grammars.JavaScript</RootNamespace>
+    <Description>JavaScript grammar for TreeSitter.Managed.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/TreeSitter.Managed/TreeSitter.Managed.csproj" />
+  </ItemGroup>
+</Project>

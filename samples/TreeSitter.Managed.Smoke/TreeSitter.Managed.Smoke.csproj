@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    A smoke test over every bundled grammar. CI runs it three ways - JIT, NativeAOT and
+    browser-wasm - and compares the output (see .github/workflows/build.yml), so the program
+    prints deterministic text only. It is not a package and it uses no external package.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <RootNamespace>TreeSitter.Smoke</RootNamespace>
+    <!-- The AOT, JIT and wasm runs must print the same bytes: no culture-dependent formatting. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/TreeSitter.Managed/TreeSitter.Managed.csproj" />
+    <ProjectReference Include="../../grammars/Bash/TreeSitter.Managed.Grammars.Bash.csproj" />
+    <ProjectReference Include="../../grammars/C/TreeSitter.Managed.Grammars.C.csproj" />
+    <ProjectReference Include="../../grammars/CSharp/TreeSitter.Managed.Grammars.CSharp.csproj" />
+    <ProjectReference Include="../../grammars/Cpp/TreeSitter.Managed.Grammars.Cpp.csproj" />
+    <ProjectReference Include="../../grammars/Css/TreeSitter.Managed.Grammars.Css.csproj" />
+    <ProjectReference Include="../../grammars/Go/TreeSitter.Managed.Grammars.Go.csproj" />
+    <ProjectReference Include="../../grammars/Html/TreeSitter.Managed.Grammars.Html.csproj" />
+    <ProjectReference Include="../../grammars/Java/TreeSitter.Managed.Grammars.Java.csproj" />
+    <ProjectReference Include="../../grammars/JavaScript/TreeSitter.Managed.Grammars.JavaScript.csproj" />
+    <ProjectReference Include="../../grammars/Json/TreeSitter.Managed.Grammars.Json.csproj" />
+    <ProjectReference Include="../../grammars/Markdown/TreeSitter.Managed.Grammars.Markdown.csproj" />
+    <ProjectReference Include="../../grammars/MarkdownInline/TreeSitter.Managed.Grammars.MarkdownInline.csproj" />
+    <ProjectReference Include="../../grammars/Python/TreeSitter.Managed.Grammars.Python.csproj" />
+    <ProjectReference Include="../../grammars/Rust/TreeSitter.Managed.Grammars.Rust.csproj" />
+    <ProjectReference Include="../../grammars/Toml/TreeSitter.Managed.Grammars.Toml.csproj" />
+    <ProjectReference Include="../../grammars/Tsx/TreeSitter.Managed.Grammars.Tsx.csproj" />
+    <ProjectReference Include="../../grammars/TypeScript/TreeSitter.Managed.Grammars.TypeScript.csproj" />
+    <ProjectReference Include="../../grammars/Yaml/TreeSitter.Managed.Grammars.Yaml.csproj" />
+  </ItemGroup>
+</Project>

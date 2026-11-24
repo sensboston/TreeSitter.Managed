@@ -1,0 +1,55 @@
+# Every way the position moves between disjoint included ranges of 'abcdef\nghij'
+# (lexer.c: ts_lexer_goto, ts_lexer__do_advance, ts_lexer__mark_end).
+input utf8 0 6162636465660a6768696a
+ranges 3 0:0:0-2:0:2 2:0:2-2:0:2 4:0:4-6:0:6
+reset 0:0:0
+start
+dump
+at_range_start
+advance 0
+at_range_start
+mark_end
+column
+advance 0
+dump
+at_range_start
+mark_end
+dump
+advance 0
+dump
+advance 0
+dump
+eof
+finish 0
+dump
+# A reset into the second range, then into the empty range and past every range
+reset 4:0:4
+start
+dump
+at_range_start
+reset 2:0:2
+start
+dump
+at_range_start
+advance 0
+dump
+reset 5:0:5
+start
+dump
+reset 99:9:99
+start
+dump
+eof
+finish 100
+dump
+# The default range again
+ranges 0
+reset 0:0:0
+start
+dump
+advance 1
+advance 1
+mark_end
+advance 0
+dump
+eof

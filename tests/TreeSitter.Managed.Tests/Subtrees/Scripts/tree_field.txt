@@ -1,0 +1,20 @@
+# Field name commands: field_name_for_child, field_name_for_named_child,
+# child_by_field_name, child_by_field_id.
+# Each command starts from root in a fresh register.
+lang json
+leaf r0 5 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 2 0 0 0
+node r2 19 0 r0 r1
+tree r2
+root r0
+field_name_for_child r0 0
+root r0
+field_name_for_child r0 1
+root r0
+field_name_for_named_child r0 0
+root r0
+field_name_for_named_child r0 1
+root r0
+child_by_field_name r0 ""
+root r0
+child_by_field_id r0 0

@@ -1,0 +1,35 @@
+# Extra nodes, keyword leaves and the symbol of a leaf.
+lang json
+# A keyword leaf: the flag is set on the leaf itself.
+leaf r0 11 0:0:0 1:0:1 1 1 0 0 1
+dump r0
+# The end symbol is always extra.
+leaf r1 0 0:0:0 1:0:1 1 1 0 0 0
+dump r1
+# setextra on an inline leaf.
+setextra r0 1
+dump r0
+setextra r0 0
+dump r0
+# setextra on a heap leaf.
+leaf r2 10 255:0:255 1:0:1 1 1 0 0 0
+setextra r2 1
+dump r2
+# setsym on an inline leaf: the name and the metadata of the leaf change.
+setsym r0 12
+dump r0
+# setsym on a heap leaf.
+setsym r2 8
+dump r2
+# An extra child does not count as a structural child.
+leaf r3 10 0:0:0 1:0:1 1 3 0 0 0
+leaf r4 10 0:0:0 1:0:1 1 4 0 0 0
+setextra r4 1
+node r5 19 0 r3 r4
+dump r5
+string r5 0 0 1
+# A keyword leaf inside a node.
+leaf r6 13 0:0:0 1:0:1 1 5 0 0 1
+node r7 19 0 r6
+dump r7
+string r7 0 0 1

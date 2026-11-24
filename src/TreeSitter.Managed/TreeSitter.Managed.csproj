@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>TreeSitter</RootNamespace>
+    <Description>Fully managed port of the tree-sitter incremental parsing runtime.</Description>
+  </PropertyGroup>
+</Project>

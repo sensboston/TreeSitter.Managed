@@ -1,0 +1,40 @@
+# Stack: the last external token. The tokens are compared by their scanner state
+# (scanmerge). sext keeps the token in the version; sgraph prints the token.
+# The external tokens belong to python (indentation tokens).
+# language: python
+lang python
+snew
+leaf r20 102 0:0:0 1:0:1 1 1 1 0 0
+extstate r20 0102
+leaf r21 102 0:0:0 1:0:1 1 1 1 0 0
+extstate r21 0102
+leaf r22 102 0:0:0 1:0:1 1 1 1 0 0
+extstate r22 0909
+scopy 0
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+spush 1 r1 0 2
+sext 1 r20
+scopy 0
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+spush 2 r1 0 2
+sext 2 r21
+scopy 0
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+spush 3 r1 0 2
+sext 3 r22
+scopy 0
+leaf r1 10 0:0:0 1:0:1 1 1 0 0 0
+spush 4 r1 0 2
+scanmerge 1 2
+scanmerge 1 3
+scanmerge 1 4
+scanmerge 4 1
+sext 4 -
+sext 4 r22
+scanmerge 1 4
+smerge 1 2
+sdump
+spause 2 -
+ssummary 1 2
+sgraph
+sdelete

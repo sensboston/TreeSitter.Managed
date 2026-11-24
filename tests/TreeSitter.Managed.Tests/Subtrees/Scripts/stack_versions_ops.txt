@@ -1,0 +1,32 @@
+# Stack: the operations on the versions. The swap exchanges two versions, the
+# renumbering replaces a version by a higher one, the removal drops one. A paused
+# version keeps its lookahead until it is resumed into a register.
+lang json
+snew
+scopy 0
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+spush 1 r0 0 2
+scopy 0
+leaf r1 10 0:0:0 1:0:1 1 3 0 0 0
+spush 2 r1 1 3
+scopy 0
+leaf r2 10 0:0:0 1:0:1 1 4 0 0 0
+spush 3 r2 0 4
+sswap 1 2
+srenumber 3 1
+sdump
+sremove 2
+leaf r3 10 0:0:0 1:0:1 1 5 0 0 0
+spause 1 r3
+ssummary 1 0
+ssummary 1 3
+sgraph
+sresume 1 r4
+dump r4
+shalt 0
+scopy 1
+sremove 2
+sdump
+sclear
+sdump
+sdelete

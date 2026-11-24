@@ -1,0 +1,46 @@
+# compare: equal subtrees give 0; the symbol, the number of children and the children
+# decide the order: -1 when the left one is smaller, 1 when it is larger.
+# A node consumes its children, so the leaves are duplicated before they are used.
+lang json
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 2 0 0 0
+leaf r2 11 0:0:0 1:0:1 1 3 0 0 0
+# Leaves with the same symbol are equal.
+compare r0 r1
+compare r1 r0
+# A different symbol decides.
+compare r0 r2
+compare r2 r0
+# The same node built twice is equal.
+dup r10 r0
+dup r11 r1
+node r3 19 0 r10 r11
+dup r12 r0
+dup r13 r1
+node r4 19 0 r12 r13
+dump r3
+dump r4
+compare r3 r4
+# A node with fewer children is smaller.
+leaf r5 10 0:0:0 1:0:1 1 4 0 0 0
+node r6 19 0 r5
+compare r6 r3
+compare r3 r6
+# The children decide when the symbols and the counts are equal.
+dup r14 r0
+dup r15 r2
+node r7 19 0 r14 r15
+compare r3 r7
+compare r7 r3
+# The same subtree is equal to itself.
+dup r8 r3
+compare r3 r8
+dump r3
+release r3
+release r4
+release r6
+release r7
+release r8
+release r0
+release r1
+release r2

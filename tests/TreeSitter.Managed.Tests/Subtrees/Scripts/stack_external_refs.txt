@@ -1,0 +1,24 @@
+# Stack: the last external token of a version is retained by the stack. A copy, a pop (the new
+# slice version) and a replacement by sext keep the references right; sext with NULL, sremove
+# and sclear release the token. The dot graph prints the scanner state of the token.
+# language: json
+lang json
+snew
+leaf r0 10 0:0:0 1:0:1 1 1 0 0 0
+spush 0 r0 0 2
+leaf r1 10 0:0:0 1:0:1 1 1 1 0 0
+extstate r1 01
+sext 0 r1
+scopy 0
+spopcount 0 1 r5
+sdump
+leaf r2 10 0:0:0 1:0:1 1 1 1 0 0
+extstate r2 02
+sext 0 r2
+sext 1 -
+sgraph
+sremove 2
+sdump
+sclear
+sdump
+sdelete

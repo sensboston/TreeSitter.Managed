@@ -1,0 +1,13 @@
+# Node flags: is_null, is_named, is_missing, is_extra, has_error, is_error.
+lang json
+leaf r0 5 0:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 0:0:0 1:0:1 1 2 0 0 0
+node r2 19 0 r0 r1
+tree r2
+root r0
+is_null r0
+is_named r0
+is_missing r0
+is_extra r0
+has_error r0
+is_error r0

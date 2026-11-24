@@ -1,0 +1,47 @@
+# Every condition of ts_subtree_can_inline, one leaf per condition.
+# A leaf that fits into the inline data is printed as "inline", every other
+# leaf needs a heap node.
+lang json
+# padding.bytes < 255: 254 fits, 255 does not.
+leaf r0 10 254:0:0 1:0:1 1 1 0 0 0
+leaf r1 10 255:0:0 1:0:1 1 1 0 0 0
+# padding.extent.row < 16: 15 fits, 16 does not.
+leaf r2 10 0:15:0 1:0:1 1 1 0 0 0
+leaf r3 10 0:16:0 1:0:1 1 1 0 0 0
+# padding.extent.column < 255: 254 fits, 255 does not.
+leaf r4 10 0:0:254 1:0:1 1 1 0 0 0
+leaf r5 10 0:0:255 1:0:1 1 1 0 0 0
+# size.bytes < 255: 254 fits, 255 does not.
+leaf r6 10 0:0:0 254:0:254 1 1 0 0 0
+leaf r7 10 0:0:0 255:0:255 1 1 0 0 0
+# size.extent.row == 0: a row does not fit.
+leaf r8 10 0:0:0 3:1:3 1 1 0 0 0
+# size.extent.column < 255: 254 fits, 255 does not.
+leaf r9 10 0:0:0 1:0:254 1 1 0 0 0
+leaf r10 10 0:0:0 1:0:255 1 1 0 0 0
+# lookahead_bytes < 16: 15 fits, 16 does not.
+leaf r11 10 0:0:0 1:0:1 15 1 0 0 0
+leaf r12 10 0:0:0 1:0:1 16 1 0 0 0
+dump r0
+dump r1
+dump r2
+dump r3
+dump r4
+dump r5
+dump r6
+dump r7
+dump r8
+dump r9
+dump r10
+dump r11
+dump r12
+# symbol <= 255: the symbol decides as well. The C grammar has more than 256
+# symbols.
+lang c
+leaf r13 255 0:0:0 1:0:1 1 1 0 0 0
+leaf r14 256 0:0:0 1:0:1 1 1 0 0 0
+dump r13
+dump r14
+# A leaf with external tokens is never inline.
+leaf r15 1 0:0:0 1:0:1 1 1 1 0 0
+dump r15

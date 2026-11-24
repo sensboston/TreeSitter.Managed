@@ -1,0 +1,36 @@
+# lastext: the last external token of a subtree. It is found in the last child that has one.
+lang json
+leaf r0 11 0:0:0 1:0:1 1 1 1 0 0
+extstate r0 01
+leaf r1 12 0:0:0 1:0:1 1 2 1 0 0
+extstate r1 0203
+leaf r2 10 0:0:0 1:0:1 1 3 0 0 0
+# A plain leaf has no external token.
+lastext r2
+# The last of two external tokens is the second one.
+dup r10 r0
+dup r11 r1
+node r3 19 0 r10 r11
+lastext r3
+dump r3
+# The last child with an external token: the first one is found when the last child has none.
+dup r12 r0
+node r4 19 0 r12 r2
+lastext r4
+# A node whose children have no external tokens has none.
+leaf r13 10 0:0:0 1:0:1 1 4 0 0 0
+leaf r14 10 0:0:0 1:0:1 1 5 0 0 0
+node r5 19 0 r13 r14
+lastext r5
+# A deep node: the external token is found in the last child that has one, at any depth.
+dup r15 r3
+leaf r16 10 0:0:0 1:0:1 1 6 0 0 0
+node r6 19 0 r15 r16
+lastext r6
+dump r6
+release r3
+release r4
+release r5
+release r6
+release r0
+release r1

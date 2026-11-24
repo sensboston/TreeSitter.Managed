@@ -1,0 +1,20 @@
+# Included ranges: bytes 1..2 and 4..6 of 'abcdef'
+input utf8 0 616263646566
+ranges 2 1:0:1-2:0:2 4:0:4-6:0:6
+reset 0:0:0
+start
+at_range_start
+dump
+advance 0
+dump
+at_range_start
+mark_end
+advance 0
+dump
+advance 0
+eof
+dump
+finish 0
+dump
+# Unordered ranges are rejected
+ranges 2 4:0:4-6:0:6 1:0:1-2:0:2

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <AssemblyName>ts2cs</AssemblyName>
+    <RootNamespace>TreeSitter.Generator</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../TreeSitter.Managed/TreeSitter.Managed.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="TreeSitter.Managed.Tests" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,10 @@
+_upstream/
+bin/
+obj/
+*.user
+.vs/
+TestResults/
+BenchmarkDotNet.Artifacts/
+artifacts/
+.cache/
+tests/Oracle/shim/generated/
