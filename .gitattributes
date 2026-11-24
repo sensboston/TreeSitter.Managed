@@ -4,3 +4,10 @@
 # Vendored upstream sources are stored byte for byte (corpus files may use CRLF on purpose).
 grammars/*/upstream/** -text
 tests/Oracle/tree-sitter/** -text
+
+# Language statistics of GitHub (linguist): the upstream grammar sources and the vendored
+# runtime of the oracle are not this project's code, the grammar tables are generated.
+grammars/*/upstream/** linguist-vendored
+grammars/*/common/** linguist-vendored
+tests/Oracle/tree-sitter/** linguist-vendored
+grammars/*/Generated/** linguist-generated
