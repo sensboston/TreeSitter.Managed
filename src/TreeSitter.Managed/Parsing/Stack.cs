@@ -55,10 +55,23 @@ internal sealed class Stack
     private uint maxDepth;
     private TsArray<StackSummaryEntry> summary;
 
+    // Cached callback delegates: a method group conversion creates a new delegate on
+    // every call, so the delegates are created once here and reused by Iterate.
+    private readonly StackCallback popCountCallback;
+    private readonly StackCallback popErrorCallback;
+    private readonly StackCallback popPendingCallback;
+    private readonly StackCallback popAllCallback;
+    private readonly StackCallback summarizeCallback;
+
     // ts_stack_new
     internal Stack(SubtreePool subtreePool)
     {
         this.subtreePool = subtreePool;
+        popCountCallback = PopCountCallback;
+        popErrorCallback = PopErrorCallback;
+        popPendingCallback = PopPendingCallback;
+        popAllCallback = PopAllCallback;
+        summarizeCallback = SummarizeCallback;
         baseNode = NodeNew(null, Subtree.Null, false, 1);
         Clear();
     }
@@ -704,7 +717,7 @@ internal sealed class Stack
     internal TsArray<StackSlice> PopCount(uint version, uint count)
     {
         goalSubtreeCount = count;
-        return Iterate(version, PopCountCallback, includeSubtrees: true);
+        return Iterate(version, popCountCallback, includeSubtrees: true);
     }
 
     /// <summary>ts_stack_pop_error: the subtrees of the error on the top of the version, or none.</summary>
@@ -716,7 +729,7 @@ internal sealed class Stack
             if (!node.Links[i].Tree.IsNull && node.Links[i].Tree.IsError)
             {
                 foundError = false;
-                TsArray<StackSlice> pop = Iterate(version, PopErrorCallback, includeSubtrees: true);
+                TsArray<StackSlice> pop = Iterate(version, popErrorCallback, includeSubtrees: true);
                 if (pop.Size > 0)
                 {
                     Debug.Assert(pop.Size == 1, "pop_error gives one slice");
@@ -734,7 +747,7 @@ internal sealed class Stack
     /// <summary>ts_stack_pop_pending: the slice is renamed to the version.</summary>
     internal TsArray<StackSlice> PopPending(uint version)
     {
-        TsArray<StackSlice> pop = Iterate(version, PopPendingCallback, includeSubtrees: true);
+        TsArray<StackSlice> pop = Iterate(version, popPendingCallback, includeSubtrees: true);
         if (pop.Size > 0)
         {
             RenumberVersion(pop.Get(0).Version, version);
@@ -746,7 +759,7 @@ internal sealed class Stack
 
     /// <summary>ts_stack_pop_all</summary>
     internal TsArray<StackSlice> PopAll(uint version) =>
-        Iterate(version, PopAllCallback, includeSubtrees: true);
+        Iterate(version, popAllCallback, includeSubtrees: true);
 
     /// <summary>ts_stack_node_count_since_error: updates the count at the last error of the head.</summary>
     internal uint NodeCountSinceError(uint version)
@@ -804,7 +817,7 @@ internal sealed class Stack
     {
         maxDepth = depthLimit;
         summary = default;
-        Iterate(version, SummarizeCallback, includeSubtrees: false);
+        Iterate(version, summarizeCallback, includeSubtrees: false);
         heads.Get(version).Summary = summary;
         summary = default;
     }
