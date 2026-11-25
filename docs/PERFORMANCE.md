@@ -83,3 +83,7 @@ From the least to the most radical:
 3. If representation dominates: option 1 (arena, algorithm one to one), designed so that
    option 3 can replace it later without rewriting the parser.
 4. Option 3 only if "faster than C" still matters after option 1.
+
+## Design
+
+The chosen design of option 1 is in [ARENA.md](ARENA.md).
