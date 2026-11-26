@@ -1,6 +1,6 @@
 # Subtree arena: design
 
-Status: implemented in 1.0.0 (option 1 of docs/PERFORMANCE.md). Results: docs/BENCHMARKS.md. The parse algorithm stays one to one;
+Status: implemented in 1.0.0 (option 1 of docs/PERFORMANCE.md). The parse algorithm stays one to one;
 only the representation of subtrees changes.
 
 Goal: the speed of the native runtime or better, with results that stay identical to it
@@ -9,25 +9,12 @@ Goal: the speed of the native runtime or better, with results that stay identica
 
 ## Why
 
-Profile of a full parse of `lib/src/query.c` (170 KB, C grammar), perf on Linux ARM64:
-port 45.5 ms, native 28.8 ms. Per parse, port / native:
-
-| Part | Port | Native |
-|---|---:|---:|
-| lexer | 6.7 ms | 9.2 ms |
-| table lookups | 2.9 ms | 3.2 ms |
-| stack | 3.5 ms | 3.9 ms |
-| subtrees (summarize, release, new) | 3.6 ms | 5.0 ms |
-| parser (advance, reduce) | 6.8 ms | 3.0 ms |
-| memory: GC, write barriers, allocation | 12.5 ms | 1.6 ms |
-
-The lexer, the tables and the stack are at native speed. About 70% of the gap is memory
-management: a parse allocates 11 MB (after caching the stack delegates), 60% `Subtree[]`
-child arrays and 40% `SubtreeHeap` objects. Almost all of it is the result tree, which lives
-until `Tree.Dispose`, so pooling freed objects does not help (measured: allocations -20%,
-time -5%, GC time unchanged). The GC time is spent marking and compacting the live tree in
-gen1/gen2, and every store of a `Subtree` into an array goes through a write barrier,
-because `Subtree` holds a reference.
+A profile of a full parse showed that the lexer, the parse tables and the stack ran at native
+speed, and that most of the remaining time was memory management: one object per node and one
+array per child list, all alive until the tree is disposed. The garbage collector spent its
+time marking and compacting the live tree, and every store of a `Subtree` into an array went
+through a write barrier, because `Subtree` held a reference. Pooling freed objects does not
+help, because almost all of it is the result tree.
 
 The fix is to make the tree invisible to the GC: no object per node, no reference in
 `Subtree`.
@@ -124,9 +111,7 @@ fails at once instead of reading another node.
 | B | children in `ChildrenArena` (A3) | same, plus allocations per parse |
 | C | finalizers of `Tree` and `Parser` (A5), a test that a forgotten tree is reclaimed and that concurrent `Dispose` on many threads keeps the arena consistent | stress test, NativeAOT and wasm smoke jobs |
 
-Expected result: the memory part of the profile (12.5 ms of 45.5 ms) shrinks to a few
-milliseconds, which brings a full parse to about 1.1 - 1.25 times native. Measured after
-each phase with the same perf method, before deciding on the next.
+Measured after each phase with the same perf method, before deciding on the next.
 
 ## Risks
 
@@ -145,5 +130,5 @@ the Subtree value holds the address of its data (pinned segments) instead of a h
 SubtreeHeapData uses the union layout of C (84 bytes).
 
 Next: the nodes of the parse stack (StackNode) are still objects with references; moving them
-into an arena of structs removes the remaining write barriers (about 4% of a parse).
+into an arena of structs removes the remaining write barriers.
 

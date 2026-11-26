@@ -12,7 +12,6 @@ Speed, with results that stay identical to the native runtime (every oracle test
   next parse on its own thread.
 - Faster tree cursor and query cursor (node fields read once per step, no per-step
   allocations), faster reuse of the old tree in an incremental parse.
-- Benchmarks against the native runtime: docs/BENCHMARKS.md.
 
 ## 0.1.0
 

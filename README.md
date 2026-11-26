@@ -217,14 +217,6 @@ does not fail, it only makes the parser reuse the wrong parts of the tree.
 `tests/TreeSitter.Managed.Tests/Parsing` (EditRunner, IncrementalParseTests) parses edited
 trees both natively and by the port, so the rule is checked, not just documented.
 
-## Performance
-
-The port runs at 1.05-1.35 times the time of the native runtime for a full parse, and 1.1-1.6
-for an incremental reparse and for queries, measured on Linux x64, Windows x64 and Linux ARM64
-against the native runtime of the same version ([docs/BENCHMARKS.md](docs/BENCHMARKS.md)):
-
-![TreeSitter.Managed against native](https://raw.githubusercontent.com/sensboston/TreeSitter.Managed/main/docs/images/benchmark-native.png)
-
 ## Another grammar with ts2cs
 
 The converter is also a dotnet tool, so a grammar that is not bundled here can be used in the
