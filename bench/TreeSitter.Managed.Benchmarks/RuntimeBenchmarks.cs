@@ -73,7 +73,8 @@ public unsafe class RuntimeBenchmarks
     [BenchmarkCategory("parse")]
     public uint ManagedParse()
     {
-        Tree tree = _parser.ParseString(_source)!;
+        // Disposed like the native side deletes its tree (ts_tree_delete) in the operation.
+        using Tree tree = _parser.ParseString(_source)!;
         return tree.RootNode.DescendantCount;
     }
 
@@ -85,9 +86,10 @@ public unsafe class RuntimeBenchmarks
     [BenchmarkCategory("reparse")]
     public uint ManagedReparse()
     {
-        Tree copy = _tree.Copy();
+        // Both trees disposed like the native side deletes them in the operation.
+        using Tree copy = _tree.Copy();
         copy.Edit(_edit);
-        Tree tree = _parser.ParseString(_source, copy)!;
+        using Tree tree = _parser.ParseString(_source, copy)!;
         return tree.RootNode.ChildCount;
     }
 

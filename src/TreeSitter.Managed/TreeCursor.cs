@@ -1,6 +1,7 @@
 // Port of tree-sitter v0.27.2 (3fb7be4): lib/src/tree_cursor.c, lib/src/tree_cursor.h (internal part).
 // Rules: docs/ARCHITECTURE.md D2. Each method has the C name above it and the same logic.
-// - TreeCursorEntry.subtree (a Subtree slot address) is (Owner, Slot) as in Node.
+// - TreeCursorEntry.subtree (a Subtree slot address) is stored as the Subtree value;
+//   the old (Owner, Slot) form is only accepted from out-of-scope ChangedRanges.cs.
 // - The internal part of tree_cursor.h (current_status, goto_*_internal, parent_node) is kept
 //   for the query engine (M4).
 
@@ -12,20 +13,34 @@ namespace TreeSitter;
 /// <summary>TreeCursorEntry: a frame on the cursor stack.</summary>
 internal struct TreeCursorEntry
 {
-    internal object? Owner;
+    // The subtree itself, like the C pointer: no reference field and no type test
+    // on the cursor's hot path.
+    internal Subtree SubtreeValue;
     internal int Slot;
     internal Length Position;
     internal uint ChildIndex;
     internal uint StructuralChildIndex;
     internal uint DescendantIndex;
 
-    /// <summary>The subtree in the slot (ts_tree_cursor_current_subtree).</summary>
-    internal Subtree Subtree => Owner switch
+    // Parsing/ChangedRanges.cs is outside this task's edit scope and still writes
+    // the old Owner slot in object initializers (before Slot is assigned). Accept
+    // that write and resolve it on read, without changing what those entries mean.
+    private object? _legacyOwner;
+    internal object? Owner
     {
-        Tree t => t.Root,
-        SubtreeHeap h => h.Children![Slot],
-        _ => Subtree.Null
-    };
+        get => _legacyOwner;
+        set => _legacyOwner = value;
+    }
+
+    /// <summary>The subtree in the slot (ts_tree_cursor_current_subtree).</summary>
+    internal Subtree Subtree => _legacyOwner is null
+        ? SubtreeValue
+        : _legacyOwner switch
+        {
+            Tree t => t.Root,
+            Subtree[] children => children[Slot],
+            _ => Subtree.Null
+        };
 }
 
 /// <summary>TreeCursorStep.</summary>
@@ -40,6 +55,9 @@ internal enum TreeCursorStep
 public sealed class TreeCursor
 {
     private Tree? _tree;
+    // Owner of the node the cursor was initialized with (a tree for the real root,
+    // a children array when the cursor starts at a deeper node).
+    private object? _rootOwner;
 
     internal TsArray<TreeCursorEntry> Stack;
     internal ushort RootAliasSymbol;
@@ -67,6 +85,7 @@ public sealed class TreeCursor
     public void ResetTo(TreeCursor source)
     {
         _tree = source._tree;
+        _rootOwner = source._rootOwner;
         RootAliasSymbol = source.RootAliasSymbol;
         Stack.Clear();
         Stack.PushAll(source.Stack);
@@ -77,6 +96,7 @@ public sealed class TreeCursor
     {
         TreeCursor copy = new();
         copy._tree = _tree;
+        copy._rootOwner = _rootOwner;
         copy.RootAliasSymbol = RootAliasSymbol;
         copy.Stack.Init();
         copy.Stack.PushAll(Stack);
@@ -92,15 +112,22 @@ public sealed class TreeCursor
             Subtree subtree = lastEntry.Subtree;
             bool isExtra = subtree.Extra;
             ushort aliasSymbol = isExtra ? (ushort)0 : RootAliasSymbol;
+            object owner = _rootOwner ?? _tree!;
 
-            if (Stack.Size > 1 && !isExtra)
+            if (Stack.Size > 1)
             {
                 ref TreeCursorEntry parentEntry = ref Stack.Get(Stack.Size - 2);
-                SubtreeHeap parentHeap = parentEntry.Subtree.Heap!;
-                aliasSymbol = _tree!.Language.AliasAt((uint)parentHeap.ProductionId, lastEntry.StructuralChildIndex);
+                ref SubtreeHeapData parentHeap = ref SubtreeArena.Get(parentEntry.Subtree);
+                // The alias and the Node owner both come from this one parent read.
+                if (!isExtra)
+                {
+                    aliasSymbol = _tree!.Language.AliasAt((uint)parentHeap.ProductionId, lastEntry.StructuralChildIndex);
+                }
+
+                owner = SubtreeArena.GetChildren(parentHeap.ChildrenHandle);
             }
 
-            return new Node(_tree!, lastEntry.Owner!, lastEntry.Slot, lastEntry.Position, aliasSymbol);
+            return new Node(_tree!, owner, lastEntry.Slot, lastEntry.Position, aliasSymbol);
         }
     }
 
@@ -139,7 +166,7 @@ public sealed class TreeCursor
                     break;
                 }
 
-                SubtreeHeap parentHeap = parentEntry.Subtree.Heap!;
+                ref SubtreeHeapData parentHeap = ref SubtreeArena.Get(parentEntry.Subtree);
                 ReadOnlySpan<FieldMapEntry> fieldMap = _tree!.Language.FieldMap((uint)parentHeap.ProductionId);
 
                 foreach (ref readonly FieldMapEntry map in fieldMap)
@@ -320,11 +347,12 @@ public sealed class TreeCursor
     internal void Init(Node node)
     {
         _tree = node.Tree;
+        _rootOwner = node.Owner;
         RootAliasSymbol = node.Alias;
         Stack.Clear();
         Stack.Push(new TreeCursorEntry
         {
-            Owner = node.Owner,
+            SubtreeValue = node.Subtree,
             Slot = node.Slot,
             Position = new Length(node.StartByteValue, new Point(node.StartRow, node.StartColumn)),
             ChildIndex = 0,
@@ -351,7 +379,7 @@ public sealed class TreeCursor
                 return TreeCursorStep.Visible;
             }
 
-            if (entry.Subtree.VisibleChildCount > 0)
+            if (iterator.ChildVisibleChildCount > 0)
             {
                 Stack.Push(entry);
                 return TreeCursorStep.Hidden;
@@ -441,18 +469,23 @@ public sealed class TreeCursor
             ref TreeCursorEntry entry = ref Stack.Get((uint)i);
             bool isVisible = true;
             ushort aliasSymbol = 0;
+            object owner = _rootOwner ?? _tree!;
 
             if (i > 0)
             {
                 ref TreeCursorEntry parentEntry = ref Stack.Get((uint)(i - 1));
-                SubtreeHeap parentHeap = parentEntry.Subtree.Heap!;
+                ref SubtreeHeapData parentHeap = ref SubtreeArena.Get(parentEntry.Subtree);
                 aliasSymbol = _tree!.Language.AliasAt((uint)parentHeap.ProductionId, entry.StructuralChildIndex);
                 isVisible = aliasSymbol != 0 || entry.Subtree.Visible;
+                if (isVisible)
+                {
+                    owner = SubtreeArena.GetChildren(parentHeap.ChildrenHandle);
+                }
             }
 
             if (isVisible)
             {
-                return new Node(_tree!, entry.Owner!, entry.Slot, entry.Position, aliasSymbol);
+                return new Node(_tree!, owner, entry.Slot, entry.Position, aliasSymbol);
             }
         }
 
@@ -475,20 +508,45 @@ public sealed class TreeCursor
         hasLaterNamedSiblings = false;
         canHaveLaterSiblingsWithThisField = false;
 
-        for (int i = (int)Stack.Size - 1; i > 0; i--)
+        int stackTop = (int)Stack.Size - 1;
+        if (stackTop <= 0)
+        {
+            return;
+        }
+
+        Language language = _tree!.Language;
+
+        // Read the top stack node once; on subsequent iterations the previous parentEntry
+        // becomes entry, so its fields are carried over without another arena lookup.
+        Subtree entrySubtree = Stack.Get((uint)stackTop).Subtree;
+        bool entryExtra;
+        ushort entryRawSymbol;
+        if (entrySubtree.IsInline)
+        {
+            entryExtra = entrySubtree.Extra;
+            entryRawSymbol = entrySubtree.Symbol;
+        }
+        else
+        {
+            ref SubtreeHeapData entryHeap = ref SubtreeArena.Get(entrySubtree);
+            entryExtra = entryHeap.HasFlag(SubtreeFlags.Extra);
+            entryRawSymbol = entryHeap.Symbol;
+        }
+
+        for (int i = stackTop; i > 0; i--)
         {
             ref TreeCursorEntry entry = ref Stack.Get((uint)i);
             ref TreeCursorEntry parentEntry = ref Stack.Get((uint)(i - 1));
 
-            SubtreeHeap parentHeap = parentEntry.Subtree.Heap!;
-            ReadOnlySpan<ushort> aliasSequenceSpan = default;
-            bool hasAliasSequence = _tree!.Language.TryGetAliasSequence(
-                (uint)parentHeap.ProductionId, out aliasSequenceSpan);
-            ushort[]? aliasSequence = hasAliasSequence ? aliasSequenceSpan.ToArray() : null;
+            ref SubtreeHeapData parentHeap = ref SubtreeArena.Get(parentEntry.Subtree);
+            ushort parentProductionId = parentHeap.ProductionId;
+            ushort[]? aliasSequence = parentProductionId != 0
+                ? language.AliasSequenceArray(parentProductionId)
+                : null;
 
-            ushort entrySymbol = SubtreeSymbol(entry.Subtree, aliasSequence, entry.StructuralChildIndex);
-            SymbolMetadata entryMetadata = _tree!.Language.GetSymbolMetadata(entrySymbol);
-            if (i != (int)Stack.Size - 1 && entryMetadata.Visible)
+            ushort entrySymbol = SubtreeSymbol(entryRawSymbol, entryExtra, aliasSequence, entry.StructuralChildIndex);
+            SymbolMetadata entryMetadata = language.GetSymbolMetadata(entrySymbol);
+            if (i != stackTop && entryMetadata.Visible)
             {
                 break;
             }
@@ -501,52 +559,85 @@ public sealed class TreeCursor
 
             if (!hasLaterNamedSiblings)
             {
-                uint siblingCount = parentEntry.Subtree.ChildCount;
-                uint structuralChildIndex = entry.StructuralChildIndex;
-                if (!entry.Subtree.Extra)
+                uint siblingCount = parentHeap.ChildCount;
+                uint nextChildIndex = entry.ChildIndex + 1;
+                if (nextChildIndex < siblingCount)
                 {
-                    structuralChildIndex++;
-                }
-
-                for (uint j = entry.ChildIndex + 1; j < siblingCount; j++)
-                {
-                    Subtree sibling = parentEntry.Subtree.Children[(int)j];
-                    ushort siblingSymbol = SubtreeSymbol(sibling, aliasSequence, structuralChildIndex);
-                    SymbolMetadata siblingMetadata = _tree!.Language.GetSymbolMetadata(siblingSymbol);
-
-                    if (siblingMetadata.Visible)
-                    {
-                        hasLaterSiblings = true;
-                        if (siblingMetadata.Named)
-                        {
-                            hasLaterNamedSiblings = true;
-                            break;
-                        }
-                    }
-                    else if (sibling.VisibleChildCount > 0)
-                    {
-                        hasLaterSiblings = true;
-                        if (sibling.NamedChildCount > 0)
-                        {
-                            hasLaterNamedSiblings = true;
-                            break;
-                        }
-                    }
-
-                    if (!sibling.Extra)
+                    Subtree[] siblings = SubtreeArena.GetChildren(parentHeap.ChildrenHandle);
+                    uint structuralChildIndex = entry.StructuralChildIndex;
+                    if (!entryExtra)
                     {
                         structuralChildIndex++;
+                    }
+
+                    for (uint j = nextChildIndex; j < siblingCount; j++)
+                    {
+                        Subtree sibling = siblings[(int)j];
+                        bool siblingExtra;
+                        ushort siblingRawSymbol;
+                        uint siblingVisibleChildCount;
+                        uint siblingNamedChildCount;
+                        if (sibling.IsInline)
+                        {
+                            siblingExtra = sibling.Extra;
+                            siblingRawSymbol = sibling.Symbol;
+                            siblingVisibleChildCount = 0;
+                            siblingNamedChildCount = 0;
+                        }
+                        else
+                        {
+                            ref SubtreeHeapData siblingHeap = ref SubtreeArena.Get(sibling);
+                            siblingExtra = siblingHeap.HasFlag(SubtreeFlags.Extra);
+                            siblingRawSymbol = siblingHeap.Symbol;
+                            if (siblingHeap.ChildCount > 0)
+                            {
+                                siblingVisibleChildCount = siblingHeap.VisibleChildCount;
+                                siblingNamedChildCount = siblingHeap.NamedChildCount;
+                            }
+                            else
+                            {
+                                siblingVisibleChildCount = 0;
+                                siblingNamedChildCount = 0;
+                            }
+                        }
+
+                        ushort siblingSymbol = SubtreeSymbol(siblingRawSymbol, siblingExtra, aliasSequence, structuralChildIndex);
+                        SymbolMetadata siblingMetadata = language.GetSymbolMetadata(siblingSymbol);
+
+                        if (siblingMetadata.Visible)
+                        {
+                            hasLaterSiblings = true;
+                            if (siblingMetadata.Named)
+                            {
+                                hasLaterNamedSiblings = true;
+                                break;
+                            }
+                        }
+                        else if (siblingVisibleChildCount > 0)
+                        {
+                            hasLaterSiblings = true;
+                            if (siblingNamedChildCount > 0)
+                            {
+                                hasLaterNamedSiblings = true;
+                                break;
+                            }
+                        }
+
+                        if (!siblingExtra)
+                        {
+                            structuralChildIndex++;
+                        }
                     }
                 }
             }
 
-            if (!entry.Subtree.Extra)
+            if (!entryExtra)
             {
-                ReadOnlySpan<FieldMapEntry> fieldMap = _tree!.Language.FieldMap((uint)parentHeap.ProductionId);
+                ReadOnlySpan<FieldMapEntry> fieldMap = language.FieldMap(parentProductionId);
 
                 if (fieldId == 0)
                 {
-                    foreach (FieldMapEntry map in fieldMap)
+                    foreach (ref readonly FieldMapEntry map in fieldMap)
                     {
                         if (!map.Inherited && map.ChildIndex == entry.StructuralChildIndex)
                         {
@@ -558,7 +649,7 @@ public sealed class TreeCursor
 
                 if (fieldId != 0)
                 {
-                    foreach (FieldMapEntry map in fieldMap)
+                    foreach (ref readonly FieldMapEntry map in fieldMap)
                     {
                         if (map.FieldId == fieldId && map.ChildIndex > entry.StructuralChildIndex)
                         {
@@ -567,6 +658,13 @@ public sealed class TreeCursor
                         }
                     }
                 }
+            }
+
+            if (i > 1)
+            {
+                // Next iteration's entry is this iteration's parentEntry (always a heap node).
+                entryExtra = parentHeap.HasFlag(SubtreeFlags.Extra);
+                entryRawSymbol = parentHeap.Symbol;
             }
         }
     }
@@ -620,7 +718,7 @@ public sealed class TreeCursor
         ref TreeCursorEntry lastEntry = ref Stack.Back();
         Subtree parentSubtree = lastEntry.Subtree;
 
-        if (parentSubtree.IsNull || parentSubtree.ChildCount == 0)
+        if (parentSubtree.IsNull || parentSubtree.IsInline)
         {
             return new CursorChildIterator
             {
@@ -634,15 +732,34 @@ public sealed class TreeCursor
             };
         }
 
-        ushort[]? aliasSequence = null;
-        SubtreeHeap heap = parentSubtree.Heap!;
-        if (_tree!.Language.TryGetAliasSequence((uint)heap.ProductionId, out ReadOnlySpan<ushort> sequence))
+        ref SubtreeHeapData heap = ref SubtreeArena.Get(parentSubtree);
+        uint childCount = heap.ChildCount;
+        if (childCount == 0)
         {
-            aliasSequence = sequence.ToArray();
+            return new CursorChildIterator
+            {
+                Tree = _tree!,
+                ParentSubtree = Subtree.Null,
+                Position = Length.Zero,
+                ChildIndex = 0,
+                StructuralChildIndex = 0,
+                DescendantIndex = 0,
+                AliasSequence = null,
+            };
         }
 
+        ushort[]? aliasSequence = _tree!.Language.AliasSequenceArray(heap.ProductionId);
+
         uint descendantIndex = lastEntry.DescendantIndex;
-        if (IsEntryVisible(Stack.Size - 1))
+        // IsEntryVisible(Stack.Size - 1) for this very entry: its heap data is
+        // already in `heap`, so only the alias case needs another arena read.
+        bool isVisible = Stack.Size == 1 ||
+            heap.HasFlag(SubtreeFlags.Visible) ||
+            (!heap.HasFlag(SubtreeFlags.Extra) && Stack.Size > 1 &&
+             _tree!.Language.AliasAt(
+                 SubtreeArena.Get(Stack.Get(Stack.Size - 2).Subtree).ProductionId,
+                 lastEntry.StructuralChildIndex) != 0);
+        if (isVisible)
         {
             descendantIndex++;
         }
@@ -651,6 +768,8 @@ public sealed class TreeCursor
         {
             Tree = _tree!,
             ParentSubtree = parentSubtree,
+            ParentChildren = SubtreeArena.GetChildren(heap.ChildrenHandle),
+            ParentChildCount = childCount,
             Position = lastEntry.Position,
             ChildIndex = 0,
             StructuralChildIndex = 0,
@@ -670,21 +789,21 @@ public sealed class TreeCursor
         if (!entry.Subtree.Extra)
         {
             ref TreeCursorEntry parentEntry = ref Stack.Get(index - 1);
-            SubtreeHeap parentHeap = parentEntry.Subtree.Heap!;
+            ref SubtreeHeapData parentHeap = ref SubtreeArena.Get(parentEntry.Subtree);
             return _tree!.Language.AliasAt((uint)parentHeap.ProductionId, entry.StructuralChildIndex) != 0;
         }
 
         return false;
     }
 
-    private static ushort SubtreeSymbol(Subtree st, ushort[]? aliasSequence, uint structuralChildIndex)
+    private static ushort SubtreeSymbol(ushort rawSymbol, bool extra, ushort[]? aliasSequence, uint structuralChildIndex)
     {
-        if (!st.Extra && aliasSequence is not null && structuralChildIndex < (uint)aliasSequence.Length && aliasSequence[structuralChildIndex] != 0)
+        if (!extra && aliasSequence is not null && structuralChildIndex < (uint)aliasSequence.Length && aliasSequence[structuralChildIndex] != 0)
         {
             return aliasSequence[structuralChildIndex];
         }
 
-        return st.Symbol;
+        return rawSymbol;
     }
 
     private long GotoFirstChildForByteAndPoint(uint goalByte, Point goalPoint)
@@ -748,7 +867,14 @@ internal struct CursorChildIterator
     internal uint DescendantIndex;
     internal ushort[]? AliasSequence;
 
-    internal bool Done => ChildIndex >= ParentSubtree.ChildCount;
+    // The children of ParentSubtree and their count, read once when the iterator is made.
+    internal Subtree[]? ParentChildren;
+    internal uint ParentChildCount;
+    // VisibleChildCount of the child returned by the last Next step, read with
+    // that child's other fields instead of looking the child up again.
+    internal uint ChildVisibleChildCount;
+
+    internal bool Done => ChildIndex >= ParentChildCount;
 
     internal static bool Next(ref CursorChildIterator self, out TreeCursorEntry entry, out bool visible)
     {
@@ -759,18 +885,42 @@ internal struct CursorChildIterator
             return false;
         }
 
-        Subtree child = self.ParentSubtree.Children![(int)self.ChildIndex];
+        Subtree[] parentChildren = self.ParentChildren!;
+        Subtree child = parentChildren[(int)self.ChildIndex];
         entry = new TreeCursorEntry
         {
-            Owner = self.ParentSubtree.Heap!,
+            SubtreeValue = child,
             Slot = (int)self.ChildIndex,
             Position = self.Position,
             ChildIndex = self.ChildIndex,
             StructuralChildIndex = self.StructuralChildIndex,
             DescendantIndex = self.DescendantIndex,
         };
-        visible = child.Visible;
-        bool extra = child.Extra;
+
+        // The fields of the child, read once (each accessor looks the node up again).
+        bool extra;
+        uint childVisibleDescendantCount;
+        uint childVisibleChildCount;
+        Length childSize;
+        if (child.IsInline)
+        {
+            visible = child.Visible;
+            extra = child.Extra;
+            childVisibleDescendantCount = 0;
+            childVisibleChildCount = 0;
+            childSize = child.Size;
+        }
+        else
+        {
+            ref SubtreeHeapData c = ref SubtreeArena.Get(child);
+            visible = c.HasFlag(SubtreeFlags.Visible);
+            extra = c.HasFlag(SubtreeFlags.Extra);
+            childVisibleDescendantCount = c.ChildCount == 0 ? 0 : c.VisibleDescendantCount;
+            childVisibleChildCount = c.ChildCount == 0 ? 0 : c.VisibleChildCount;
+            childSize = c.Size;
+        }
+
+        self.ChildVisibleChildCount = childVisibleChildCount;
 
         if (!extra)
         {
@@ -782,18 +932,18 @@ internal struct CursorChildIterator
             self.StructuralChildIndex++;
         }
 
-        self.DescendantIndex += child.VisibleDescendantCount;
+        self.DescendantIndex += childVisibleDescendantCount;
         if (visible)
         {
             self.DescendantIndex++;
         }
 
-        self.Position = Length.Add(self.Position, child.Size);
+        self.Position = Length.Add(self.Position, childSize);
         self.ChildIndex++;
 
-        if (self.ChildIndex < self.ParentSubtree.ChildCount)
+        if (self.ChildIndex < self.ParentChildCount)
         {
-            Subtree nextChild = self.ParentSubtree.Children![(int)self.ChildIndex];
+            Subtree nextChild = parentChildren[(int)self.ChildIndex];
             self.Position = Length.Add(self.Position, nextChild.Padding);
         }
 
@@ -809,20 +959,41 @@ internal struct CursorChildIterator
             return false;
         }
 
-        Subtree child = self.ParentSubtree.Children![(int)self.ChildIndex];
+        Subtree parentSubtree = self.ParentSubtree;
+        ReadOnlySpan<Subtree> children = parentSubtree.Children;
+        Subtree child = children[(int)self.ChildIndex];
         entry = new TreeCursorEntry
         {
-            Owner = self.ParentSubtree.Heap!,
+            SubtreeValue = child,
             Slot = (int)self.ChildIndex,
             Position = self.Position,
             ChildIndex = self.ChildIndex,
             StructuralChildIndex = self.StructuralChildIndex,
             DescendantIndex = self.DescendantIndex,
         };
-        visible = child.Visible;
-        bool extra = child.Extra;
 
-        self.Position = LengthBacktrack(self.Position, child.Padding);
+        // One heap lookup for the child's fields, as in Next.
+        bool extra;
+        uint childVisibleChildCount;
+        Length childPadding;
+        if (child.IsInline)
+        {
+            visible = child.Visible;
+            extra = child.Extra;
+            childVisibleChildCount = 0;
+            childPadding = child.Padding;
+        }
+        else
+        {
+            ref SubtreeHeapData c = ref SubtreeArena.Get(child);
+            visible = c.HasFlag(SubtreeFlags.Visible);
+            extra = c.HasFlag(SubtreeFlags.Extra);
+            childVisibleChildCount = c.ChildCount == 0 ? 0 : c.VisibleChildCount;
+            childPadding = c.Padding;
+        }
+
+        self.ChildVisibleChildCount = childVisibleChildCount;
+        self.Position = LengthBacktrack(self.Position, childPadding);
         self.ChildIndex--;
 
         if (!extra && self.AliasSequence is not null && self.StructuralChildIndex < self.AliasSequence.Length)
@@ -834,23 +1005,41 @@ internal struct CursorChildIterator
             }
         }
 
-        if (self.ChildIndex < self.ParentSubtree.ChildCount)
+        if (self.ChildIndex < parentSubtree.ChildCount)
         {
-            Subtree previousChild = self.ParentSubtree.Children![(int)self.ChildIndex];
-            bool previousVisible = previousChild.Visible;
-            if (!previousChild.Extra && self.AliasSequence is not null)
+            Subtree previousChild = children[(int)self.ChildIndex];
+            bool previousVisible;
+            bool previousExtra;
+            uint previousVisibleDescendantCount;
+            Length previousSize;
+            if (previousChild.IsInline)
+            {
+                previousVisible = previousChild.Visible;
+                previousExtra = previousChild.Extra;
+                previousVisibleDescendantCount = 0;
+                previousSize = previousChild.Size;
+            }
+            else
+            {
+                ref SubtreeHeapData previousHeap = ref SubtreeArena.Get(previousChild);
+                previousVisible = previousHeap.HasFlag(SubtreeFlags.Visible);
+                previousExtra = previousHeap.HasFlag(SubtreeFlags.Extra);
+                previousVisibleDescendantCount = previousHeap.ChildCount == 0 ? 0 : previousHeap.VisibleDescendantCount;
+                previousSize = previousHeap.Size;
+            }
+
+            if (!previousExtra && self.AliasSequence is not null)
             {
                 previousVisible |= self.AliasSequence[self.StructuralChildIndex] != 0;
             }
 
-            self.DescendantIndex -= previousChild.VisibleDescendantCount;
+            self.DescendantIndex -= previousVisibleDescendantCount;
             if (previousVisible)
             {
                 self.DescendantIndex--;
             }
 
-            Length size = previousChild.Size;
-            self.Position = LengthBacktrack(self.Position, size);
+            self.Position = LengthBacktrack(self.Position, previousSize);
         }
 
         return true;

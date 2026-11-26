@@ -521,6 +521,21 @@ public sealed class Language
     }
 
     /// <summary>ts_language_alias_sequence; false when C returns NULL.</summary>
+    private ushort[]?[]? _aliasSequenceArrays;
+
+    /// <summary>The alias sequence of a production as an array, created once per production
+    /// and shared (the tree cursor and node iterators keep it in a struct field).</summary>
+    internal ushort[]? AliasSequenceArray(uint productionId)
+    {
+        if (!TryGetAliasSequence(productionId, out ReadOnlySpan<ushort> sequence))
+        {
+            return null;
+        }
+
+        ushort[]?[] arrays = _aliasSequenceArrays ??= new ushort[]?[Tables.ProductionIdCount];
+        return arrays[productionId] ??= sequence.ToArray();
+    }
+
     internal bool TryGetAliasSequence(uint productionId, out ReadOnlySpan<ushort> sequence)
     {
         ushort[]? sequences = Tables.AliasSequences;

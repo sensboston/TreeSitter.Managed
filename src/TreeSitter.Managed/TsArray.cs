@@ -19,6 +19,8 @@
 // `_compare_int`. Here the caller passes a static lambda (no allocation per call).
 
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace TreeSitter;
 
@@ -74,7 +76,12 @@ internal struct TsArray<T>
     internal ref T Front() => ref Get(0);
 
     // array_back
-    internal ref T Back() => ref Get(Size - 1);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal ref T Back()
+    {
+        Debug.Assert(Size > 0, "array_back on empty array");
+        return ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Contents!), (nint)(Size - 1));
+    }
 
     // array_clear. The storage is kept.
     internal void Clear() => Size = 0;
@@ -88,7 +95,27 @@ internal struct TsArray<T>
     {
         if (newCapacity > Capacity)
         {
-            Array.Resize(ref Contents, (int)newCapacity);
+            if (typeof(T) == typeof(Subtrees.Subtree))
+            {
+                // Subtree arrays come from the per-thread pool of the subtree arena, and the
+                // old storage goes back to it, like realloc frees the old block (no copy of
+                // this array struct may use the old storage afterwards, as in C; debug builds
+                // poison returned arrays to catch a violation).
+                Subtrees.Subtree[] next = Subtrees.SubtreeArena.RentChildren((int)newCapacity);
+                if (Contents is not null)
+                {
+                    Subtrees.Subtree[] old = (Subtrees.Subtree[])(object)Contents;
+                    old.AsSpan().CopyTo(next);
+                    Subtrees.SubtreeArena.ReturnChildren(old);
+                }
+
+                Contents = (T[])(object)next;
+            }
+            else
+            {
+                Array.Resize(ref Contents, (int)newCapacity);
+            }
+
             Capacity = newCapacity;
         }
     }
@@ -100,25 +127,37 @@ internal struct TsArray<T>
         uint newSize = Size + count;
         if (newSize > Capacity)
         {
-            uint newCapacity = Capacity * 2u;
-            if (newCapacity < 8u)
-            {
-                newCapacity = 8u;
-            }
-            if (newCapacity < newSize)
-            {
-                newCapacity = newSize;
-            }
-            Reserve(newCapacity);
+            GrowSlow(newSize);
         }
     }
 
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void GrowSlow(uint newSize)
+    {
+        uint newCapacity = Capacity * 2u;
+        if (newCapacity < 8u)
+        {
+            newCapacity = 8u;
+        }
+        if (newCapacity < newSize)
+        {
+            newCapacity = newSize;
+        }
+        Reserve(newCapacity);
+    }
+
     // array_push
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void Push(T element)
     {
-        Grow(1);
-        Contents![Size] = element;
-        Size++;
+        uint size = Size;
+        if (size >= Capacity)
+        {
+            GrowSlow(size + 1u);
+        }
+
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Contents!), (nint)size) = element;
+        Size = size + 1u;
     }
 
     // array_grow_by: appends count zero-initialized elements. Nothing happens for count 0.
@@ -189,7 +228,14 @@ internal struct TsArray<T>
     }
 
     // array_pop: removes the last element and returns it. The array must not be empty.
-    internal T Pop() => Contents![--Size];
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal T Pop()
+    {
+        Debug.Assert(Size > 0, "array_pop on empty array");
+        uint next = Size - 1u;
+        Size = next;
+        return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Contents!), (nint)next);
+    }
 
     // array_assign: makes this array hold a copy of source. Reserve only grows the storage.
     internal void Assign(ReadOnlySpan<T> source)

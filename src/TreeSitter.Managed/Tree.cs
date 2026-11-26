@@ -5,6 +5,7 @@
 // - The root slot of a node (TSNode.id == &tree->root) is Node.Owner == this tree, Slot 0.
 
 using System;
+using System.Threading;
 using TreeSitter.Abi;
 using TreeSitter.Subtrees;
 
@@ -16,6 +17,7 @@ public sealed class Tree : IDisposable
     private Subtree _root;
     private readonly Language _language;
     private readonly Range[] _includedRanges;
+    private int _disposed;
 
     // ts_tree_edit changes the root and the included ranges in place.
 
@@ -38,15 +40,37 @@ public sealed class Tree : IDisposable
     public Tree Copy()
     {
         SubtreeOps.Retain(_root);
-        return new Tree(_root, _language, _includedRanges);
+        Tree copy = new Tree(_root, _language, _includedRanges);
+        GC.KeepAlive(this);
+        return copy;
     }
 
     /// <summary>ts_tree_delete</summary>
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
         SubtreePool pool = new SubtreePool(0);
         SubtreeOps.Release(pool, _root);
         pool.Delete();
+        _root = Subtree.Null;
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>Releases the root subtree if not already disposed (ts_tree_delete).</summary>
+    ~Tree()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        // Released by the next parse on its own thread (SubtreeArena.DeferRelease).
+        SubtreeArena.DeferRelease(_root);
+        _root = Subtree.Null;
     }
 
     /// <summary>ts_tree_edit: edits the tree to keep it in sync with an edit of the source.</summary>
@@ -60,6 +84,7 @@ public sealed class Tree : IDisposable
         SubtreePool pool = new SubtreePool(0);
         _root = SubtreeOps.Edit(_root, edit, pool);
         pool.Delete();
+        GC.KeepAlive(this);
     }
 
     /// <summary>
@@ -70,7 +95,10 @@ public sealed class Tree : IDisposable
     {
         ArgumentNullException.ThrowIfNull(oldTree);
         ArgumentNullException.ThrowIfNull(newTree);
-        return TreeSitter.Parsing.ChangedRanges.Get(oldTree, newTree);
+        Range[] result = TreeSitter.Parsing.ChangedRanges.Get(oldTree, newTree);
+        GC.KeepAlive(oldTree);
+        GC.KeepAlive(newTree);
+        return result;
     }
 
     /// <summary>ts_tree_root_node</summary>

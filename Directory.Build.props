@@ -34,7 +34,7 @@
   <!-- NuGet metadata of every package. The version comes from the tag v<version> in CI
        (-p:Version=...); VersionPrefix is the version of local builds. -->
   <PropertyGroup Condition="'$(TsIsPackage)' == 'true'">
-    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionPrefix>1.0.0</VersionPrefix>
     <Authors>SeNS</Authors>
     <Copyright>Copyright (c) 2026 SeNS</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

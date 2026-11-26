@@ -1,7 +1,7 @@
 // Port of tree-sitter v0.27.2 (3fb7be4): lib/src/subtree.c (without the dot graph printer).
 // Rules: docs/ARCHITECTURE.md D1. Each method has the C name above it and the same logic.
-// - ref counts: Interlocked on SubtreeHeap.RefCount, at exactly the places C changes them.
-// - ts_subtree_pool_allocate always creates a new SubtreeHeap; ts_subtree_pool_free does not
+// - ref counts: Interlocked on SubtreeHeapData.RefCount, at exactly the places C changes them.
+// - ts_subtree_pool_allocate always creates a new arena slot; ts_subtree_pool_free does not
 //   keep freed objects (recycling is off by decision D1), but the free_trees size rule is kept
 //   in a comment so the place is visible.
 // - ts_subtree_new_node takes the children array (SubtreeArray contents) as its own, like C;
@@ -16,130 +16,20 @@ using TreeSitter.Abi;
 
 namespace TreeSitter.Subtrees;
 
-/// <summary>ExternalScannerState: short data inline (24 bytes), longer data in an array.</summary>
-internal struct ExternalScannerState
-{
-    // Fields are private to the implementation: an [InlineArray(24)] buffer, a byte[] for
-    // long data, and the length (decision D8).
-
-    /// <summary>The size of the inline buffer: sizeof(short_data) of the C code.</summary>
-    private const int ShortCapacity = 24;
-
-    /// <summary>The inline buffer of the C code (char short_data[24]).</summary>
-    [InlineArray(ShortCapacity)]
-    private struct ShortBuffer
-    {
-        private byte _element0;
-    }
-
-    private ShortBuffer _short;
-    private byte[]? _long;
-    private uint _length;
-
-    /// <summary>ts_external_scanner_state_init</summary>
-    internal static ExternalScannerState Create(ReadOnlySpan<byte> data)
-    {
-        ExternalScannerState state = default;
-        if (data.Length > ShortCapacity)
-        {
-            state._long = data.ToArray();
-        }
-        else
-        {
-            Span<byte> buffer = MemoryMarshal.CreateSpan(ref state._short[0], ShortCapacity);
-            data.CopyTo(buffer);
-        }
-
-        state._length = (uint)data.Length;
-        return state;
-    }
-
-    /// <summary>
-    /// The repeat_depth of a leaf from an external scanner. In SubtreeHeapData of the C code
-    /// external_scanner_state and the non-terminal fields (repeat_depth among them) share one
-    /// union, and ts_subtree_repeat_depth reads the field without checking child_count. So
-    /// for such a leaf it returns bytes 16 and 17 of short_data (little endian). The leaf is
-    /// zero-initialized by ts_subtree_new_leaf, so the bytes past the length are zero, and a
-    /// long state (only the long_data pointer is written) gives zero.
-    /// </summary>
-    internal readonly ushort UnionRepeatDepth
-    {
-        get
-        {
-            if (_length > ShortCapacity)
-            {
-                return 0;
-            }
-
-            return (ushort)(_short[16] | (_short[17] << 8));
-        }
-    }
-
-    /// <summary>ts_external_scanner_state_copy</summary>
-    internal readonly ExternalScannerState Copy()
-    {
-        ExternalScannerState result = this;
-        if (_length > ShortCapacity)
-        {
-            result._long = _long!.AsSpan().ToArray();
-        }
-
-        return result;
-    }
-
-    /// <summary>ts_external_scanner_state_delete</summary>
-    internal void Delete()
-    {
-        // C frees the long buffer and leaves the state unusable. The garbage collector
-        // frees the buffer here, so the state becomes empty.
-        _long = null;
-        _length = 0;
-    }
-
-    /// <summary>ts_external_scanner_state_data (length bytes)</summary>
-    internal readonly ReadOnlySpan<byte> Data
-    {
-        get
-        {
-            if (_length > ShortCapacity)
-            {
-                return _long!.AsSpan(0, (int)_length);
-            }
-
-            // 'this' is readonly in a readonly member: the buffer is reached through a
-            // writable reference, otherwise the compiler would copy the struct and the
-            // span would point to the copy.
-            ref ExternalScannerState self = ref Unsafe.AsRef(in this);
-            return MemoryMarshal.CreateReadOnlySpan(ref self._short[0], (int)_length);
-        }
-    }
-
-    internal readonly uint Length => _length;
-
-    /// <summary>ts_external_scanner_state_eq</summary>
-    internal readonly bool Eq(ReadOnlySpan<byte> buffer) =>
-        _length == (uint)buffer.Length && Data.SequenceEqual(buffer);
-}
-
-/// <summary>SubtreePool</summary>
+/// <summary>SubtreePool: per-parser scratch (tree stack for iterative traversals).</summary>
 internal sealed class SubtreePool
 {
     /// <summary>ts_subtree_pool_new</summary>
     internal SubtreePool(uint capacity)
     {
-        FreeTrees = new TsArray<SubtreeHeap>();
         TreeStack = new TsArray<Subtree>();
-        FreeTrees.Reserve(capacity);
     }
-
-    internal TsArray<SubtreeHeap> FreeTrees;
 
     internal TsArray<Subtree> TreeStack;
 
     /// <summary>ts_subtree_pool_delete</summary>
     internal void Delete()
     {
-        FreeTrees.Delete();
         TreeStack.Delete();
     }
 }
@@ -273,30 +163,34 @@ internal static class SubtreeOps
                 (byte)size.Bytes);
         }
 
-        SubtreeHeap heap = new SubtreeHeap
-        {
-            RefCount = 1,
-            Padding = padding,
-            Size = size,
-            LookaheadBytes = lookaheadBytes,
-            ErrorCost = 0,
-            ChildCount = 0,
-            Symbol = symbol,
-            ParseState = parseState,
-            Flags = MakeFlags(
-                metadata.Visible,
-                metadata.Named,
-                extra,
-                false,
-                false,
-                false,
-                hasExternalTokens,
-                false,
-                dependsOnColumn,
-                false,
-                isKeyword),
-        };
-        return new Subtree(0, heap);
+        Subtree result = SubtreeArena.Allocate();
+        ref SubtreeHeapData heap = ref SubtreeArena.Get(result);
+        heap.RefCount = 1;
+        heap.Padding = padding;
+        heap.Size = size;
+        heap.LookaheadBytes = lookaheadBytes;
+        heap.ErrorCost = 0;
+        heap.ChildCount = 0;
+        heap.Symbol = symbol;
+        heap.ParseState = parseState;
+        heap.Flags = MakeFlags(
+            metadata.Visible,
+            metadata.Named,
+            extra,
+            false,
+            false,
+            false,
+            hasExternalTokens,
+            false,
+            dependsOnColumn,
+            false,
+            isKeyword);
+        heap.ChildrenHandle = -1;
+
+        // The union (offset 0) stays zero, as the zeroed SubtreeHeapData of C: a leaf that is
+        // not an external token has lookahead_char 0, one that is gets its short data or its
+        // long state handle written by WriteTo.
+        return result;
     }
 
     /// <summary>ts_subtree_set_symbol</summary>
@@ -309,7 +203,7 @@ internal static class SubtreeOps
         }
         else
         {
-            SubtreeHeap heap = self.Heap!;
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(self);
             heap.Symbol = symbol;
             heap.SetFlag(SubtreeFlags.Named, metadata.Named);
             heap.SetFlag(SubtreeFlags.Visible, metadata.Visible);
@@ -334,56 +228,74 @@ internal static class SubtreeOps
             language);
 
         // The error symbol never fits into the inline data, so the result is a heap node.
-        SubtreeHeap heap = result.Heap!;
+        ref SubtreeHeapData heap = ref SubtreeArena.Get(result);
         heap.SetFlag(SubtreeFlags.FragileLeft, true);
         heap.SetFlag(SubtreeFlags.FragileRight, true);
         heap.LookaheadChar = lookaheadChar;
         return result;
     }
 
+    private static Subtree[] CopyChildren(ReadOnlySpan<Subtree> children)
+    {
+        Subtree[] array = SubtreeArena.RentChildren(children.Length);
+        children.CopyTo(array);
+        return array;
+    }
+
     /// <summary>ts_subtree_clone</summary>
     internal static Subtree Clone(Subtree self)
     {
-        SubtreeHeap source = self.Heap!;
-        SubtreeHeap result = new SubtreeHeap
-        {
-            RefCount = 1,
-            Padding = source.Padding,
-            Size = source.Size,
-            LookaheadBytes = source.LookaheadBytes,
-            ErrorCost = source.ErrorCost,
-            ChildCount = source.ChildCount,
-            Symbol = source.Symbol,
-            ParseState = source.ParseState,
-            Flags = source.Flags,
-            VisibleChildCount = source.VisibleChildCount,
-            NamedChildCount = source.NamedChildCount,
-            VisibleDescendantCount = source.VisibleDescendantCount,
-            DynamicPrecedence = source.DynamicPrecedence,
-            RepeatDepth = source.RepeatDepth,
-            ProductionId = source.ProductionId,
-            FirstLeafSymbol = source.FirstLeafSymbol,
-            FirstLeafParseState = source.FirstLeafParseState,
-            LookaheadChar = source.LookaheadChar,
-        };
+        ref SubtreeHeapData source = ref SubtreeArena.Get(self);
+        Subtree resultSubtree = SubtreeArena.Allocate();
+        ref SubtreeHeapData result = ref SubtreeArena.Get(resultSubtree);
+        result.RefCount = 1;
+        result.Padding = source.Padding;
+        result.Size = source.Size;
+        result.LookaheadBytes = source.LookaheadBytes;
+        result.ErrorCost = source.ErrorCost;
+        result.ChildCount = source.ChildCount;
+        result.Symbol = source.Symbol;
+        result.ParseState = source.ParseState;
+        result.Flags = source.Flags;
+        result.ChildrenHandle = -1;
+
+        // The union holds one interpretation (subtree.h): reset it (the handle of a long
+        // state and the short data under it are zero, as a zeroed SubtreeHeapData in C),
+        // then copy the fields of the one the source has. A node with children has the
+        // non-terminal fields, a leaf the external scanner state or the lookahead char.
+        result.ExternalScannerState.Length = 0;
 
         if (source.ChildCount > 0)
         {
-            Subtree[] children = new Subtree[(int)source.ChildCount];
+            result.VisibleChildCount = source.VisibleChildCount;
+            result.NamedChildCount = source.NamedChildCount;
+            result.VisibleDescendantCount = source.VisibleDescendantCount;
+            result.DynamicPrecedence = source.DynamicPrecedence;
+            result.RepeatDepth = source.RepeatDepth;
+            result.ProductionId = source.ProductionId;
+            result.FirstLeafSymbol = source.FirstLeafSymbol;
+            result.FirstLeafParseState = source.FirstLeafParseState;
+
+            Subtree[] srcChildren = SubtreeArena.GetChildren(source.ChildrenHandle);
+            Subtree[] children = SubtreeArena.RentChildren((int)source.ChildCount);
             for (uint i = 0; i < source.ChildCount; i++)
             {
-                children[i] = source.Children![i];
+                children[i] = srcChildren[i];
                 Retain(children[i]);
             }
 
-            result.Children = children;
+            result.ChildrenHandle = SubtreeArena.StoreChildren(resultSubtree.Handle, children);
         }
         else if (source.HasFlag(SubtreeFlags.HasExternalTokens))
         {
-            result.ExternalScannerState = source.ExternalScannerState.Copy();
+            ExternalScannerState.CopyData(in source.ExternalScannerState, ref result.ExternalScannerState);
+        }
+        else
+        {
+            result.LookaheadChar = source.LookaheadChar;
         }
 
-        return new Subtree(0, result);
+        return resultSubtree;
     }
 
     /// <summary>ts_subtree_make_mut</summary>
@@ -394,7 +306,8 @@ internal static class SubtreeOps
             return self;
         }
 
-        if (self.Heap!.RefCount == 1)
+        ref SubtreeHeapData heap = ref SubtreeArena.Get(self);
+        if (heap.RefCount == 1)
         {
             return self;
         }
@@ -407,48 +320,75 @@ internal static class SubtreeOps
     /// <summary>ts_subtree_compress</summary>
     internal static void Compress(Subtree self, uint count, Language language, ref TsArray<Subtree> stack)
     {
-        uint initialStackSize = stack.Size;
-        Subtree tree = self;
-        if (tree.IsInline || tree.IsNull)
+        if (count == 0 || self.IsInline || self.IsNull)
         {
             return;
         }
 
-        ushort symbol = tree.Heap!.Symbol;
+        uint initialStackSize = stack.Size;
+        Subtree tree = self;
+        ref SubtreeHeapData treeHeap = ref SubtreeArena.Get(tree);
+        if (treeHeap.RefCount > 1 || treeHeap.ChildCount < 2)
+        {
+            return;
+        }
+
+        ushort symbol = treeHeap.Symbol;
+        Subtree[] treeChildren = SubtreeArena.GetChildren(treeHeap.ChildrenHandle);
+
         for (uint i = 0; i < count; i++)
         {
-            SubtreeHeap treeHeap = tree.Heap!;
-            if (treeHeap.RefCount > 1 || treeHeap.ChildCount < 2)
+            ref Subtree treeChild0 = ref MemoryMarshal.GetArrayDataReference(treeChildren);
+            Subtree child = treeChild0;
+            if ((child.Value & 1UL) != 0)
             {
                 break;
             }
 
-            Subtree child = treeHeap.Children![0];
-            if (child.IsInline || child.Heap!.ChildCount < 2 || child.Heap!.RefCount > 1 || child.Heap!.Symbol != symbol)
+            ref SubtreeHeapData childHeap = ref SubtreeArena.Get(child);
+            if (childHeap.ChildCount < 2 || childHeap.RefCount > 1 || childHeap.Symbol != symbol)
             {
                 break;
             }
 
-            SubtreeHeap childHeap = child.Heap!;
-            Subtree grandchild = childHeap.Children![0];
-            if (grandchild.IsInline || grandchild.Heap!.ChildCount < 2 || grandchild.Heap!.RefCount > 1 || grandchild.Heap!.Symbol != symbol)
+            Subtree[] childChildren = SubtreeArena.GetChildren(childHeap.ChildrenHandle);
+            ref Subtree childChild0 = ref MemoryMarshal.GetArrayDataReference(childChildren);
+            Subtree grandchild = childChild0;
+            if ((grandchild.Value & 1UL) != 0)
             {
                 break;
             }
 
-            SubtreeHeap grandchildHeap = grandchild.Heap!;
-            treeHeap.Children![0] = grandchild;
-            childHeap.Children![0] = grandchildHeap.Children![grandchildHeap.ChildCount - 1];
-            grandchildHeap.Children![grandchildHeap.ChildCount - 1] = child;
+            ref SubtreeHeapData grandchildHeap = ref SubtreeArena.Get(grandchild);
+            uint grandchildChildCount = grandchildHeap.ChildCount;
+            if (grandchildChildCount < 2 || grandchildHeap.RefCount > 1 || grandchildHeap.Symbol != symbol)
+            {
+                break;
+            }
+
+            Subtree[] grandchildChildren = SubtreeArena.GetChildren(grandchildHeap.ChildrenHandle);
+            ref Subtree grandchildLast = ref Unsafe.Add(
+                ref MemoryMarshal.GetArrayDataReference(grandchildChildren),
+                (nint)(grandchildChildCount - 1));
+
+            treeChild0 = grandchild;
+            childChild0 = grandchildLast;
+            grandchildLast = child;
+
             stack.Push(tree);
             tree = grandchild;
+            treeChildren = grandchildChildren;
         }
 
         while (stack.Size > initialStackSize)
         {
             tree = stack.Pop();
-            Subtree child = tree.Heap!.Children![0];
-            Subtree grandchild = child.Heap!.Children![child.Heap!.ChildCount - 1];
+            ref SubtreeHeapData th = ref SubtreeArena.Get(tree);
+            Subtree child = MemoryMarshal.GetArrayDataReference(SubtreeArena.GetChildren(th.ChildrenHandle));
+            ref SubtreeHeapData ch = ref SubtreeArena.Get(child);
+            Subtree grandchild = Unsafe.Add(
+                ref MemoryMarshal.GetArrayDataReference(SubtreeArena.GetChildren(ch.ChildrenHandle)),
+                (nint)(ch.ChildCount - 1));
             SummarizeChildren(grandchild, language);
             SummarizeChildren(child, language);
             SummarizeChildren(tree, language);
@@ -458,173 +398,390 @@ internal static class SubtreeOps
     /// <summary>ts_subtree_summarize_children</summary>
     internal static void SummarizeChildren(Subtree self, Language language)
     {
-        SubtreeHeap heap = self.Heap!;
+        ref SubtreeHeapData heap = ref SubtreeArena.Get(self);
 
-        heap.NamedChildCount = 0;
-        heap.VisibleChildCount = 0;
-        heap.ErrorCost = 0;
-        heap.RepeatDepth = 0;
-        heap.VisibleDescendantCount = 0;
-        heap.SetFlag(SubtreeFlags.HasExternalTokens, false);
-        heap.SetFlag(SubtreeFlags.DependsOnColumn, false);
-        heap.SetFlag(SubtreeFlags.HasExternalScannerStateChange, false);
-        heap.DynamicPrecedence = 0;
+        // The summary is accumulated in locals and written into the node once, after the
+        // loop. The node is the same for every child, and the C code simply writes it on
+        // every step; the arithmetic here is the same, in the same order, and the values
+        // written at the end are the ones the last step of the C code leaves behind.
+        SubtreeFlags flags = heap.Flags & ~(
+            SubtreeFlags.HasExternalTokens |
+            SubtreeFlags.DependsOnColumn |
+            SubtreeFlags.HasExternalScannerStateChange);
+        uint errorCost = 0;
+        uint namedChildCount = 0;
+        uint visibleChildCount = 0;
+        uint visibleDescendantCount = 0;
+        int dynamicPrecedence = 0;
+        ushort repeatDepth = 0;
+        bool parseStateNone = false;
 
-        uint structuralIndex = 0;
-        bool hasAliasSequence = language.TryGetAliasSequence(heap.ProductionId, out ReadOnlySpan<ushort> aliasSequence);
-        uint lookaheadEndByte = 0;
+        // With no children the loop does not run, and the C code then leaves padding, size
+        // and lookahead_bytes as they were, so start from the current values.
+        Length padding = heap.Padding;
+        Length size = heap.Size;
+        ushort symbol = heap.Symbol;
+        uint childCount = heap.ChildCount;
 
-        ReadOnlySpan<Subtree> children = self.Children;
-        for (uint i = 0; i < heap.ChildCount; i++)
+        if (childCount > 0)
         {
-            Subtree child = children[(int)i];
+            uint structuralIndex = 0;
+            uint productionId = heap.ProductionId;
+            LanguageTables tables = language.Tables;
+            uint maxAliasSequenceLength = (uint)tables.MaxAliasSequenceLength;
+            ushort[]? aliasSequences = tables.AliasSequences;
+            int aliasBase = productionId != 0 && aliasSequences is not null
+                ? (int)(productionId * maxAliasSequenceLength)
+                : -1;
+            SymbolMetadata[] symbolMetadata = tables.SymbolMetadata!;
+            uint lookaheadEndByte = 0;
+            bool isErrorNode = symbol == BuiltinSymbols.Error || symbol == BuiltinSymbols.ErrorRepeat;
 
-            if ((i == 0 || heap.Size.Extent.Row == 0) && child.DependsOnColumn)
-            {
-                heap.SetFlag(SubtreeFlags.DependsOnColumn, true);
-            }
+            ushort firstLeafSymbol = 0;
+            ushort firstLeafParseState = 0;
+            ushort firstSymbol = 0;
+            uint firstRepeatDepth = 0;
+            uint lastRepeatDepth = 0;
+            bool firstFragileLeft = false;
+            bool lastFragileRight = false;
 
-            if (child.HasExternalScannerStateChange)
-            {
-                heap.SetFlag(SubtreeFlags.HasExternalScannerStateChange, true);
-            }
+            uint sizeBytesAcc = size.Bytes;
+            uint sizeRowAcc = size.Extent.Row;
+            uint sizeColAcc = size.Extent.Column;
+            uint padBytes0 = padding.Bytes;
 
-            if (i == 0)
+            ref Subtree childrenBase = ref MemoryMarshal.GetArrayDataReference(
+                SubtreeArena.GetChildren(heap.ChildrenHandle));
+            for (uint i = 0; i < childCount; i++)
             {
-                heap.Padding = child.Padding;
-                heap.Size = child.Size;
-            }
-            else
-            {
-                heap.Size = Length.Add(heap.Size, child.TotalSize);
-            }
+                Subtree child = Unsafe.Add(ref childrenBase, (nint)i);
+                ulong raw = child.Value;
 
-            uint childLookaheadEndByte = heap.Padding.Bytes + heap.Size.Bytes + child.LookaheadBytes;
-            if (childLookaheadEndByte > lookaheadEndByte)
-            {
-                lookaheadEndByte = childLookaheadEndByte;
-            }
+                ushort childSymbol;
+                bool childExtra, childVisible, childNamed;
+                uint childLookaheadBytes;
 
-            uint grandchildCount = child.ChildCount;
-            if (child.Symbol == BuiltinSymbols.ErrorRepeat)
-            {
-                // Refund an _ERROR child's extent penalty, which this node re-charges
-                // as part of its own extent below, so that the grouping is cost-neutral.
-                uint extentCost = ErrorExtentCost(child.Size);
-                heap.ErrorCost += child.ErrorCost - extentCost;
-            }
-            else
-            {
-                heap.ErrorCost += child.ErrorCost;
-                if (heap.Symbol == BuiltinSymbols.Error || heap.Symbol == BuiltinSymbols.ErrorRepeat)
+                if ((raw & 1UL) != 0)
                 {
-                    if (!child.Extra && !(child.IsError && grandchildCount == 0))
+                    // Inline leaf: decode directly from the 64-bit value once, without
+                    // calling properties that re-check IsInline or reading unused heap fields.
+                    childSymbol = (ushort)((raw >> 8) & 0xFF);
+                    childVisible = (raw & (1UL << 1)) != 0;
+                    childNamed = (raw & (1UL << 2)) != 0;
+                    childExtra = (raw & (1UL << 3)) != 0;
+
+                    if ((i == 0 || sizeRowAcc == 0) && (raw & (1UL << 7)) != 0)
                     {
-                        if (child.Visible)
+                        flags |= SubtreeFlags.DependsOnColumn;
+                    }
+
+                    uint padBytes = (uint)((raw >> 48) & 0xFF);
+                    uint padRow = (uint)((raw >> 40) & 0x0F);
+                    uint padCol = (uint)((raw >> 32) & 0xFF);
+                    uint sizeBytes = (uint)((raw >> 56) & 0xFF);
+                    childLookaheadBytes = (uint)((raw >> 44) & 0x0F);
+
+                    if (i == 0)
+                    {
+                        padBytes0 = padBytes;
+                        padding = new Length(padBytes, new Point(padRow, padCol));
+                        sizeBytesAcc = sizeBytes;
+                        sizeRowAcc = 0;
+                        sizeColAcc = sizeBytes;
+                        firstLeafSymbol = childSymbol;
+                        firstLeafParseState = (ushort)((raw >> 16) & 0xFFFF);
+                        firstSymbol = childSymbol;
+                    }
+                    else
+                    {
+                        sizeBytesAcc += padBytes + sizeBytes;
+                        uint totalCol = padCol + sizeBytes;
+                        if (padRow > 0)
                         {
-                            heap.ErrorCost += ErrorCosts.ErrorCostPerSkippedTree;
+                            sizeRowAcc += padRow;
+                            sizeColAcc = totalCol;
                         }
-                        else if (grandchildCount > 0)
+                        else
                         {
-                            heap.ErrorCost += ErrorCosts.ErrorCostPerSkippedTree * child.VisibleChildCount;
+                            sizeColAcc += totalCol;
                         }
                     }
-                }
-            }
 
-            heap.DynamicPrecedence += child.DynamicPrecedence;
-            heap.VisibleDescendantCount += child.VisibleDescendantCount;
+                    if ((raw & (1UL << 5)) != 0)
+                    {
+                        errorCost += ErrorCosts.ErrorCostPerMissingTree + ErrorCosts.ErrorCostPerRecovery;
+                    }
 
-            ushort aliasSymbol = 0;
-            if (!child.Extra &&
-                child.Symbol != 0 &&
-                hasAliasSequence &&
-                structuralIndex < aliasSequence.Length)
-            {
-                aliasSymbol = aliasSequence[(int)structuralIndex];
-            }
+                    // Inline symbol fits in 8 bits, so it is never Error (0xFFFF) or ErrorRepeat (0xFFFE).
+                    if (isErrorNode && !childExtra && childVisible)
+                    {
+                        errorCost += ErrorCosts.ErrorCostPerSkippedTree;
+                    }
 
-            if (aliasSymbol != 0)
-            {
-                heap.VisibleDescendantCount++;
-                heap.VisibleChildCount++;
-                if (language.GetSymbolMetadata(aliasSymbol).Named)
-                {
-                    heap.NamedChildCount++;
-                }
-            }
-            else if (child.Visible)
-            {
-                heap.VisibleDescendantCount++;
-                heap.VisibleChildCount++;
-                if (child.Named)
-                {
-                    heap.NamedChildCount++;
-                }
-            }
-            else if (grandchildCount > 0)
-            {
-                heap.VisibleChildCount += child.VisibleChildCount;
-                heap.NamedChildCount += child.Heap!.NamedChildCount;
-            }
+                    ushort aliasSymbol = 0;
+                    if (!childExtra && childSymbol != 0 && aliasBase >= 0 && structuralIndex < maxAliasSequenceLength)
+                    {
+                        aliasSymbol = Unsafe.Add(
+                            ref MemoryMarshal.GetArrayDataReference(aliasSequences!),
+                            (nint)(aliasBase + (int)structuralIndex));
+                    }
 
-            if (child.HasExternalTokens)
-            {
-                heap.SetFlag(SubtreeFlags.HasExternalTokens, true);
-            }
+                    if (aliasSymbol != 0)
+                    {
+                        visibleDescendantCount++;
+                        visibleChildCount++;
+                        bool aliasNamed = aliasSymbol == BuiltinSymbols.Error ||
+                            (aliasSymbol != BuiltinSymbols.ErrorRepeat &&
+                             Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(symbolMetadata), (nint)aliasSymbol).Named);
+                        if (aliasNamed)
+                        {
+                            namedChildCount++;
+                        }
+                    }
+                    else if (childVisible)
+                    {
+                        visibleDescendantCount++;
+                        visibleChildCount++;
+                        if (childNamed)
+                        {
+                            namedChildCount++;
+                        }
+                    }
 
-            if (child.IsError)
-            {
-                heap.SetFlag(SubtreeFlags.FragileLeft, true);
-                heap.SetFlag(SubtreeFlags.FragileRight, true);
-                heap.ParseState = TreeStateNone;
-            }
-
-            if (!child.Extra)
-            {
-                structuralIndex++;
-            }
-        }
-
-        heap.LookaheadBytes = unchecked(lookaheadEndByte - heap.Size.Bytes - heap.Padding.Bytes);
-
-        if (heap.Symbol == BuiltinSymbols.Error || heap.Symbol == BuiltinSymbols.ErrorRepeat)
-        {
-            heap.ErrorCost += ErrorExtentCost(heap.Size);
-        }
-
-        if (heap.ChildCount > 0)
-        {
-            Subtree firstChild = children[0];
-            Subtree lastChild = children[(int)heap.ChildCount - 1];
-
-            heap.FirstLeafSymbol = firstChild.LeafSymbol;
-            heap.FirstLeafParseState = firstChild.LeafParseState;
-
-            if (firstChild.FragileLeft)
-            {
-                heap.SetFlag(SubtreeFlags.FragileLeft, true);
-            }
-
-            if (lastChild.FragileRight)
-            {
-                heap.SetFlag(SubtreeFlags.FragileRight, true);
-            }
-
-            if (heap.ChildCount >= 2 &&
-                !heap.HasFlag(SubtreeFlags.Visible) &&
-                !heap.HasFlag(SubtreeFlags.Named) &&
-                firstChild.Symbol == heap.Symbol)
-            {
-                if (firstChild.RepeatDepth > lastChild.RepeatDepth)
-                {
-                    heap.RepeatDepth = (ushort)(firstChild.RepeatDepth + 1);
+                    if (i + 1 == childCount)
+                    {
+                        lastFragileRight = false;
+                        lastRepeatDepth = 0;
+                    }
                 }
                 else
                 {
-                    heap.RepeatDepth = (ushort)(lastChild.RepeatDepth + 1);
+                    ref SubtreeHeapData c = ref SubtreeArena.Get(child);
+                    SubtreeFlags childFlags = c.Flags;
+                    childSymbol = c.Symbol;
+                    uint grandchildCount = c.ChildCount;
+                    childVisible = (childFlags & SubtreeFlags.Visible) != 0;
+                    childNamed = (childFlags & SubtreeFlags.Named) != 0;
+                    childExtra = (childFlags & SubtreeFlags.Extra) != 0;
+
+                    if ((i == 0 || sizeRowAcc == 0) && (childFlags & SubtreeFlags.DependsOnColumn) != 0)
+                    {
+                        flags |= SubtreeFlags.DependsOnColumn;
+                    }
+
+                    if ((childFlags & SubtreeFlags.HasExternalScannerStateChange) != 0)
+                    {
+                        flags |= SubtreeFlags.HasExternalScannerStateChange;
+                    }
+
+                    Length childPadding = c.Padding;
+                    Length childSize = c.Size;
+                    childLookaheadBytes = c.LookaheadBytes;
+
+                    if (i == 0)
+                    {
+                        padBytes0 = childPadding.Bytes;
+                        padding = childPadding;
+                        sizeBytesAcc = childSize.Bytes;
+                        sizeRowAcc = childSize.Extent.Row;
+                        sizeColAcc = childSize.Extent.Column;
+                        firstSymbol = childSymbol;
+                        if (grandchildCount == 0)
+                        {
+                            firstLeafSymbol = childSymbol;
+                            firstLeafParseState = c.ParseState;
+                            firstRepeatDepth = (childFlags & SubtreeFlags.HasExternalTokens) != 0
+                                ? c.ExternalScannerState.UnionRepeatDepth
+                                : c.RepeatDepth;
+                        }
+                        else
+                        {
+                            firstLeafSymbol = c.FirstLeafSymbol;
+                            firstLeafParseState = c.FirstLeafParseState;
+                            firstRepeatDepth = c.RepeatDepth;
+                        }
+
+                        firstFragileLeft = (childFlags & SubtreeFlags.FragileLeft) != 0;
+                    }
+                    else
+                    {
+                        sizeBytesAcc += childPadding.Bytes + childSize.Bytes;
+                        uint padRow = childPadding.Extent.Row;
+                        uint csRow = childSize.Extent.Row;
+                        uint totalRow = padRow + csRow;
+                        uint totalCol = csRow > 0
+                            ? childSize.Extent.Column
+                            : childPadding.Extent.Column + childSize.Extent.Column;
+                        if (totalRow > 0)
+                        {
+                            sizeRowAcc += totalRow;
+                            sizeColAcc = totalCol;
+                        }
+                        else
+                        {
+                            sizeColAcc += totalCol;
+                        }
+                    }
+
+                    uint childErrorCost = (childFlags & SubtreeFlags.IsMissing) != 0
+                        ? ErrorCosts.ErrorCostPerMissingTree + ErrorCosts.ErrorCostPerRecovery
+                        : c.ErrorCost;
+
+                    if (childSymbol == BuiltinSymbols.ErrorRepeat)
+                    {
+                        // Refund an _ERROR child's extent penalty, which this node re-charges
+                        // as part of its own extent below, so that the grouping is cost-neutral.
+                        uint extentCost = ErrorExtentCost(childSize);
+                        errorCost += childErrorCost - extentCost;
+                    }
+                    else
+                    {
+                        errorCost += childErrorCost;
+                        if (isErrorNode)
+                        {
+                            if (!childExtra && !(childSymbol == BuiltinSymbols.Error && grandchildCount == 0))
+                            {
+                                if (childVisible)
+                                {
+                                    errorCost += ErrorCosts.ErrorCostPerSkippedTree;
+                                }
+                                else if (grandchildCount > 0)
+                                {
+                                    errorCost += ErrorCosts.ErrorCostPerSkippedTree * c.VisibleChildCount;
+                                }
+                            }
+                        }
+                    }
+
+                    if (grandchildCount > 0)
+                    {
+                        dynamicPrecedence += c.DynamicPrecedence;
+                        visibleDescendantCount += c.VisibleDescendantCount;
+                    }
+
+                    ushort aliasSymbol = 0;
+                    if (!childExtra && childSymbol != 0 && aliasBase >= 0 && structuralIndex < maxAliasSequenceLength)
+                    {
+                        aliasSymbol = Unsafe.Add(
+                            ref MemoryMarshal.GetArrayDataReference(aliasSequences!),
+                            (nint)(aliasBase + (int)structuralIndex));
+                    }
+
+                    if (aliasSymbol != 0)
+                    {
+                        visibleDescendantCount++;
+                        visibleChildCount++;
+                        bool aliasNamed = aliasSymbol == BuiltinSymbols.Error ||
+                            (aliasSymbol != BuiltinSymbols.ErrorRepeat &&
+                             Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(symbolMetadata), (nint)aliasSymbol).Named);
+                        if (aliasNamed)
+                        {
+                            namedChildCount++;
+                        }
+                    }
+                    else if (childVisible)
+                    {
+                        visibleDescendantCount++;
+                        visibleChildCount++;
+                        if (childNamed)
+                        {
+                            namedChildCount++;
+                        }
+                    }
+                    else if (grandchildCount > 0)
+                    {
+                        visibleChildCount += c.VisibleChildCount;
+                        namedChildCount += c.NamedChildCount;
+                    }
+
+                    if ((childFlags & SubtreeFlags.HasExternalTokens) != 0)
+                    {
+                        flags |= SubtreeFlags.HasExternalTokens;
+                    }
+
+                    if (childSymbol == BuiltinSymbols.Error)
+                    {
+                        flags |= SubtreeFlags.FragileLeft | SubtreeFlags.FragileRight;
+                        parseStateNone = true;
+                    }
+
+                    if (i + 1 == childCount)
+                    {
+                        lastFragileRight = (childFlags & SubtreeFlags.FragileRight) != 0;
+                        lastRepeatDepth = grandchildCount == 0 && (childFlags & SubtreeFlags.HasExternalTokens) != 0
+                            ? c.ExternalScannerState.UnionRepeatDepth
+                            : c.RepeatDepth;
+                    }
+                }
+
+                uint childLookaheadEndByte = padBytes0 + sizeBytesAcc + childLookaheadBytes;
+                if (childLookaheadEndByte > lookaheadEndByte)
+                {
+                    lookaheadEndByte = childLookaheadEndByte;
+                }
+
+                if (!childExtra)
+                {
+                    structuralIndex++;
                 }
             }
+
+            size = new Length(sizeBytesAcc, new Point(sizeRowAcc, sizeColAcc));
+            uint lookaheadBytes = unchecked(lookaheadEndByte - sizeBytesAcc - padBytes0);
+
+            if (isErrorNode)
+            {
+                errorCost += ErrorExtentCost(size);
+            }
+
+            heap.FirstLeafSymbol = firstLeafSymbol;
+            heap.FirstLeafParseState = firstLeafParseState;
+
+            if (firstFragileLeft)
+            {
+                flags |= SubtreeFlags.FragileLeft;
+            }
+
+            if (lastFragileRight)
+            {
+                flags |= SubtreeFlags.FragileRight;
+            }
+
+            if (childCount >= 2 &&
+                (flags & (SubtreeFlags.Visible | SubtreeFlags.Named)) == 0 &&
+                firstSymbol == symbol)
+            {
+                repeatDepth = firstRepeatDepth > lastRepeatDepth
+                    ? (ushort)(firstRepeatDepth + 1)
+                    : (ushort)(lastRepeatDepth + 1);
+            }
+
+            heap.Padding = padding;
+            heap.Size = size;
+            heap.LookaheadBytes = lookaheadBytes;
+        }
+        else
+        {
+            uint lookaheadBytes = unchecked(0u - size.Bytes - padding.Bytes);
+            if (symbol == BuiltinSymbols.Error || symbol == BuiltinSymbols.ErrorRepeat)
+            {
+                errorCost += ErrorExtentCost(size);
+            }
+
+            heap.LookaheadBytes = lookaheadBytes;
+        }
+
+        // One write per field, into the same node (the union fields keep their own offsets).
+        heap.ErrorCost = errorCost;
+        heap.NamedChildCount = namedChildCount;
+        heap.VisibleChildCount = visibleChildCount;
+        heap.VisibleDescendantCount = visibleDescendantCount;
+        heap.DynamicPrecedence = dynamicPrecedence;
+        heap.RepeatDepth = repeatDepth;
+        heap.Flags = flags;
+        if (parseStateNone)
+        {
+            heap.ParseState = TreeStateNone;
         }
     }
 
@@ -634,48 +791,56 @@ internal static class SubtreeOps
         SymbolMetadata metadata = language.GetSymbolMetadata(symbol);
         bool fragile = symbol == BuiltinSymbols.Error || symbol == BuiltinSymbols.ErrorRepeat;
 
-        SubtreeHeap heap = new SubtreeHeap
-        {
-            RefCount = 1,
-            Padding = Length.Zero,
-            Size = Length.Zero,
-            LookaheadBytes = 0,
-            ErrorCost = 0,
-            ChildCount = children.Size,
-            Symbol = symbol,
-            ParseState = 0,
-            Flags = MakeFlags(
-                metadata.Visible,
-                metadata.Named,
-                false,
-                fragile,
-                fragile,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false),
-            VisibleDescendantCount = 0,
-            ProductionId = (ushort)productionId,
-            FirstLeafSymbol = 0,
-            FirstLeafParseState = 0,
-        };
+        Subtree result = SubtreeArena.Allocate();
+        ref SubtreeHeapData heap = ref SubtreeArena.Get(result);
+        heap.RefCount = 1;
+        heap.Padding = Length.Zero;
+        heap.Size = Length.Zero;
+        heap.LookaheadBytes = 0;
+        heap.ErrorCost = 0;
+        heap.ChildCount = children.Size;
+        heap.Symbol = symbol;
+        heap.ParseState = 0;
+        heap.Flags = MakeFlags(
+            metadata.Visible,
+            metadata.Named,
+            false,
+            fragile,
+            fragile,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false);
+        // The union (offset 0) holds one interpretation (subtree.h); for a node with children
+        // it is the non-terminal one, which SummarizeChildren writes in full. The reset of the
+        // external scanner state handle that Allocate does is overwritten here, as in C.
+        heap.VisibleDescendantCount = 0;
+        heap.ProductionId = (ushort)productionId;
+        heap.FirstLeafSymbol = 0;
+        heap.FirstLeafParseState = 0;
+        heap.ChildrenHandle = -1;
 
         // The node takes the children over: the array of the caller must not be used
         // any more (in C the node data is stored behind the children of the same block).
-        Subtree[] childArray = new Subtree[(int)children.Size];
-        for (uint i = 0; i < children.Size; i++)
+        // Readers use the array length as the child count, so the array is taken as it is
+        // only when its length is exactly the child count, else copied to that length.
+        Subtree[] childArray = children.Contents is { } contents && contents.Length == (int)children.Size
+            ? contents
+            : CopyChildren(children.AsSpan());
+        heap.ChildrenHandle = SubtreeArena.StoreChildren(result.Handle, childArray);
+        if (children.Contents is { } dropped && !ReferenceEquals(dropped, childArray))
         {
-            childArray[i] = children.Get(i);
+            // The node took a copy: the storage of the caller goes back to the pool (C:
+            // new_node takes the array over, the caller must not use it any more).
+            SubtreeArena.ReturnChildren(dropped);
         }
 
-        heap.Children = childArray;
         children.Contents = null;
         children.Size = 0;
         children.Capacity = 0;
 
-        Subtree result = new Subtree(0, heap);
         SummarizeChildren(result, language);
         return result;
     }
@@ -684,7 +849,7 @@ internal static class SubtreeOps
     internal static Subtree NewErrorNode(ref TsArray<Subtree> children, bool extra, Language language)
     {
         Subtree result = NewNode(BuiltinSymbols.Error, ref children, 0, language);
-        result.Heap!.SetFlag(SubtreeFlags.Extra, extra);
+        SubtreeArena.Get(result).SetFlag(SubtreeFlags.Extra, extra);
         return result;
     }
 
@@ -710,7 +875,7 @@ internal static class SubtreeOps
         }
         else
         {
-            result.Heap!.SetFlag(SubtreeFlags.IsMissing, true);
+            SubtreeArena.Get(result).SetFlag(SubtreeFlags.IsMissing, true);
         }
 
         return result;
@@ -725,7 +890,7 @@ internal static class SubtreeOps
         }
         else
         {
-            self.Heap!.SetFlag(SubtreeFlags.Extra, isExtra);
+            SubtreeArena.Get(self).SetFlag(SubtreeFlags.Extra, isExtra);
         }
     }
 
@@ -739,7 +904,7 @@ internal static class SubtreeOps
             return;
         }
 
-        SubtreeHeap heap = self.Heap!;
+        ref SubtreeHeapData heap = ref SubtreeArena.Get(self);
         Interlocked.Increment(ref heap.RefCount);
     }
 
@@ -753,7 +918,7 @@ internal static class SubtreeOps
 
         pool.TreeStack.Clear();
 
-        SubtreeHeap heap = self.Heap!;
+        ref SubtreeHeapData heap = ref SubtreeArena.Get(self);
         if (Interlocked.Decrement(ref heap.RefCount) == 0)
         {
             pool.TreeStack.Push(self);
@@ -762,37 +927,38 @@ internal static class SubtreeOps
         while (pool.TreeStack.Size > 0)
         {
             Subtree tree = pool.TreeStack.Pop();
-            SubtreeHeap treeHeap = tree.Heap!;
-            if (treeHeap.ChildCount > 0 && treeHeap.Children is not null)
+            ref SubtreeHeapData treeHeap = ref SubtreeArena.Get(tree);
+            if (treeHeap.ChildCount > 0 && treeHeap.ChildrenHandle >= 0)
             {
-                for (uint i = 0; i < treeHeap.ChildCount; i++)
+                Subtree[] children = SubtreeArena.GetChildren(treeHeap.ChildrenHandle);
+                uint childCount = treeHeap.ChildCount;
+                for (uint i = 0; i < childCount; i++)
                 {
-                    Subtree child = treeHeap.Children[i];
+                    Subtree child = children[i];
                     if (child.IsInline)
                     {
                         continue;
                     }
 
-                    SubtreeHeap childHeap = child.Heap!;
+                    ref SubtreeHeapData childHeap = ref SubtreeArena.Get(child);
                     if (Interlocked.Decrement(ref childHeap.RefCount) == 0)
                     {
                         pool.TreeStack.Push(child);
                     }
                 }
 
-                // C frees the children of the node here.
-                treeHeap.Children = null;
+                SubtreeArena.FreeChildren(treeHeap.ChildrenHandle);
+                treeHeap.ChildrenHandle = -1;
+                SubtreeArena.Free(tree.Handle);
             }
             else
             {
                 if (treeHeap.HasFlag(SubtreeFlags.HasExternalTokens))
                 {
-                    treeHeap.ExternalScannerState.Delete();
+                    ExternalScannerState.DeleteData(ref treeHeap.ExternalScannerState);
                 }
 
-                // C: ts_subtree_pool_free (the pool keeps at most TS_MAX_TREE_POOL_SIZE
-                // objects). Recycling is off by decision D1: the garbage collector frees
-                // the object.
+                SubtreeArena.Free(tree.Handle);
             }
         }
     }
@@ -850,16 +1016,16 @@ internal static class SubtreeOps
     /// <summary>The frame of ts_subtree_edit: a pointer to a subtree slot and the edit in that slot's coordinates.</summary>
     private readonly struct EditEntry
     {
-        internal EditEntry(SubtreeHeap? parent, int childIndex, Length start, Length oldEnd, Length newEnd)
+        internal EditEntry(int parentHandle, int childIndex, Length start, Length oldEnd, Length newEnd)
         {
-            Parent = parent;
+            ParentHandle = parentHandle;
             ChildIndex = childIndex;
             Start = start;
             OldEnd = oldEnd;
             NewEnd = newEnd;
         }
 
-        internal SubtreeHeap? Parent { get; }
+        internal int ParentHandle { get; }
 
         internal int ChildIndex { get; }
 
@@ -876,7 +1042,7 @@ internal static class SubtreeOps
         TsArray<EditEntry> stack = new TsArray<EditEntry>();
         Subtree root = self;
         stack.Push(new EditEntry(
-            null,
+            -1,
             -1,
             new Length(edit.StartByte, edit.StartPoint),
             new Length(edit.OldEndByte, edit.OldEndPoint),
@@ -885,7 +1051,9 @@ internal static class SubtreeOps
         while (stack.Size > 0)
         {
             EditEntry entry = stack.Pop();
-            Subtree current = entry.Parent is null ? root : entry.Parent.Children![entry.ChildIndex];
+            Subtree current = entry.ParentHandle < 0
+                ? root
+                : SubtreeArena.GetChildren(SubtreeArena.Get(entry.ParentHandle).ChildrenHandle)[entry.ChildIndex];
             Length start = entry.Start;
             Length oldEnd = entry.OldEnd;
             Length newEnd = entry.NewEnd;
@@ -941,36 +1109,37 @@ internal static class SubtreeOps
                 }
                 else
                 {
-                    SubtreeHeap heap = new SubtreeHeap
-                    {
-                        RefCount = 1,
-                        Padding = padding,
-                        Size = size,
-                        LookaheadBytes = lookaheadBytes,
-                        ErrorCost = 0,
-                        ChildCount = 0,
-                        Symbol = result.Symbol,
-                        ParseState = result.ParseState,
-                        Flags = MakeFlags(
-                            result.Visible,
-                            result.Named,
-                            result.Extra,
-                            false,
-                            false,
-                            false,
-                            false,
-                            false,
-                            result.DependsOnColumn,
-                            result.IsMissing,
-                            result.IsKeyword),
-                    };
-                    result = new Subtree(0, heap);
+                    Subtree newHeap = SubtreeArena.Allocate();
+                    ref SubtreeHeapData hd = ref SubtreeArena.Get(newHeap);
+                    hd.RefCount = 1;
+                    hd.Padding = padding;
+                    hd.Size = size;
+                    hd.LookaheadBytes = lookaheadBytes;
+                    hd.ErrorCost = 0;
+                    hd.ChildCount = 0;
+                    hd.Symbol = result.Symbol;
+                    hd.ParseState = result.ParseState;
+                    hd.Flags = MakeFlags(
+                        result.Visible,
+                        result.Named,
+                        result.Extra,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        result.DependsOnColumn,
+                        result.IsMissing,
+                        result.IsKeyword);
+                    hd.ChildrenHandle = -1;
+                    result = newHeap;
                 }
             }
             else
             {
-                result.Heap!.Padding = padding;
-                result.Heap!.Size = size;
+                ref SubtreeHeapData hd = ref SubtreeArena.Get(result);
+                hd.Padding = padding;
+                hd.Size = size;
             }
 
             if (result.IsInline)
@@ -979,24 +1148,28 @@ internal static class SubtreeOps
             }
             else
             {
-                result.Heap!.SetFlag(SubtreeFlags.HasChanges, true);
+                SubtreeArena.Get(result).SetFlag(SubtreeFlags.HasChanges, true);
             }
 
-            if (entry.Parent is null)
+            if (entry.ParentHandle < 0)
             {
                 root = result;
             }
             else
             {
-                entry.Parent.Children![entry.ChildIndex] = result;
+                SubtreeArena.GetChildren(SubtreeArena.Get(entry.ParentHandle).ChildrenHandle)[entry.ChildIndex] = result;
             }
 
             uint childCount = result.ChildCount;
             Length childLeft = Length.Zero;
             Length childRight = Length.Zero;
+            Subtree[] resultChildren = childCount > 0
+                ? SubtreeArena.GetChildren(SubtreeArena.Get(result).ChildrenHandle)
+                : Array.Empty<Subtree>();
+            int resultHandle = result.IsHeap ? result.Handle : -1;
             for (uint i = 0; i < childCount; i++)
             {
-                Subtree child = result.Heap!.Children![(int)i];
+                Subtree child = resultChildren[(int)i];
                 Length childSize = child.TotalSize;
                 childLeft = childRight;
                 childRight = Length.Add(childLeft, childSize);
@@ -1026,7 +1199,7 @@ internal static class SubtreeOps
                     childNewEnd = childStart;
                 }
 
-                stack.Push(new EditEntry(result.Heap, (int)i, childStart, childOldEnd, childNewEnd));
+                stack.Push(new EditEntry(resultHandle, (int)i, childStart, childOldEnd, childNewEnd));
             }
         }
 
@@ -1079,7 +1252,7 @@ internal static class SubtreeOps
         ArgumentNullException.ThrowIfNull(language);
         ArgumentNullException.ThrowIfNull(writer);
 
-        Dictionary<SubtreeHeap, uint> ids = new(ReferenceEqualityComparer.Instance);
+        Dictionary<int, uint> ids = new Dictionary<int, uint>();
         uint nextId = 0;
 
         // The identity of a node is the address of the Subtree value in C: a heap node
@@ -1088,12 +1261,13 @@ internal static class SubtreeOps
         // of the tree walk, the same as in the C code.
         uint NodeId(Subtree subtree)
         {
-            if (subtree.Heap is not null)
+            if (subtree.IsHeap)
             {
-                if (!ids.TryGetValue(subtree.Heap, out uint id))
+                int handle = subtree.Handle;
+                if (!ids.TryGetValue(handle, out uint id))
                 {
                     id = nextId++;
-                    ids.Add(subtree.Heap, id);
+                    ids.Add(handle, id);
                 }
 
                 return id;
@@ -1128,7 +1302,7 @@ internal static class SubtreeOps
             if (subtree.IsError && subtree.ChildCount == 0)
             {
                 int lookaheadChar = 0;
-                if (subtree.Heap is SubtreeHeap heap) lookaheadChar = heap.LookaheadChar;
+                if (subtree.IsHeap) lookaheadChar = SubtreeArena.Get(subtree).LookaheadChar;
                 if (lookaheadChar != 0)
                 {
                     // fprintf writes the character as an unsigned char byte; the oracle
@@ -1213,10 +1387,10 @@ internal static class SubtreeOps
             return default;
         }
 
-        SubtreeHeap heap = self.Heap!;
+        ref SubtreeHeapData heap = ref SubtreeArena.Get(self);
         if (heap.HasFlag(SubtreeFlags.HasExternalTokens) && heap.ChildCount == 0)
         {
-            return heap.ExternalScannerState.Copy();
+            return ExternalScannerState.FromData(in heap.ExternalScannerState);
         }
 
         return default;
@@ -1225,6 +1399,45 @@ internal static class SubtreeOps
     /// <summary>ts_subtree_external_scanner_state_eq</summary>
     internal static bool ExternalScannerStateEq(Subtree self, Subtree other)
     {
+        bool hasLeftState = false;
+        uint leftLength = 0;
+        if (!self.IsNull && !self.IsInline)
+        {
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(self);
+            hasLeftState = heap.HasFlag(SubtreeFlags.HasExternalTokens) && heap.ChildCount == 0;
+            if (hasLeftState)
+            {
+                leftLength = heap.ExternalScannerState.Length;
+            }
+        }
+
+        bool hasRightState = false;
+        uint rightLength = 0;
+        if (!other.IsNull && !other.IsInline)
+        {
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(other);
+            hasRightState = heap.HasFlag(SubtreeFlags.HasExternalTokens) && heap.ChildCount == 0;
+            if (hasRightState)
+            {
+                rightLength = heap.ExternalScannerState.Length;
+            }
+        }
+
+        if (!hasLeftState && !hasRightState)
+        {
+            return true;
+        }
+
+        if (!hasLeftState)
+        {
+            return rightLength == 0;
+        }
+
+        if (!hasRightState)
+        {
+            return leftLength == 0;
+        }
+
         ExternalScannerState left = GetExternalScannerState(self);
         ExternalScannerState right = GetExternalScannerState(other);
         return left.Eq(right.Data);
@@ -1422,10 +1635,10 @@ internal static class SubtreeOps
                         }
                     }
 
-                    if (node.IsError && node.ChildCount == 0 && node.Heap!.Size.Bytes > 0)
+                    if (node.IsError && node.ChildCount == 0 && node.Size.Bytes > 0)
                     {
                         builder.Append("(UNEXPECTED ");
-                        WriteCharToString(builder, node.Heap!.LookaheadChar);
+                        WriteCharToString(builder, SubtreeArena.Get(node).LookaheadChar);
                     }
                     else
                     {
@@ -1469,7 +1682,7 @@ internal static class SubtreeOps
 
                 if (node.ChildCount > 0)
                 {
-                    frame.ProductionId = node.Heap!.ProductionId;
+                    frame.ProductionId = SubtreeArena.Get(node).ProductionId;
                 }
 
                 frame.IsVisible = isVisible;

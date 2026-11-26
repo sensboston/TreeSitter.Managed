@@ -170,7 +170,7 @@ internal static class ChangedRanges
         {
             Subtree parent = self.Stack.Contents[self.Stack.Size - 2].Subtree;
             return self.Language.AliasAt(
-                parent.Heap!.ProductionId,
+                SubtreeArena.Get(parent).ProductionId,
                 entry.StructuralChildIndex) != 0;
         }
 
@@ -204,7 +204,7 @@ internal static class ChangedRanges
             {
                 Subtree parent = self.Stack.Contents[i - 1].Subtree;
                 aliasSymbol = self.Language.AliasAt(
-                    parent.Heap!.ProductionId,
+                    SubtreeArena.Get(parent).ProductionId,
                     entry.StructuralChildIndex);
             }
 
@@ -264,7 +264,7 @@ internal static class ChangedRanges
                 {
                     self.Stack.Push(new TreeCursorEntry
                     {
-                        Owner = entrySubtree.Heap,
+                        Owner = SubtreeArena.GetChildren(SubtreeArena.Get(entrySubtree).ChildrenHandle),
                         Slot = (int)i,
                         Position = position,
                         ChildIndex = i,
@@ -359,7 +359,7 @@ internal static class ChangedRanges
 
                 self.Stack.Push(new TreeCursorEntry
                 {
-                    Owner = parent.Heap,
+                    Owner = SubtreeArena.GetChildren(SubtreeArena.Get(parent).ChildrenHandle),
                     Slot = (int)childIndex,
                     Position = position,
                     ChildIndex = childIndex,

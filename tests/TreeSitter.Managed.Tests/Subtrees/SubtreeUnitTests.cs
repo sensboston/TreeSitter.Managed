@@ -113,7 +113,11 @@ public class SubtreeUnitTests
     {
         SubtreePool pool = new SubtreePool(4);
         Subtree leaf = HeapLeaf(pool, 10, hasExternalTokens: true);
-        leaf.Heap!.ExternalScannerState = ExternalScannerState.Create(new byte[] { 7, 8, 9 });
+        {
+            ExternalScannerState _st = ExternalScannerState.Create(new byte[] { 7, 8, 9 });
+            ref SubtreeHeapData _hd = ref SubtreeArena.Get(leaf);
+            _st.WriteTo(ref _hd.ExternalScannerState);
+        }
         ExternalScannerState state = SubtreeOps.GetExternalScannerState(leaf);
         Assert.Equal(3u, state.Length);
         Assert.True(state.Data.SequenceEqual(new byte[] { 7, 8, 9 }));
@@ -125,11 +129,23 @@ public class SubtreeUnitTests
         SubtreePool pool = new SubtreePool(4);
         Subtree left = HeapLeaf(pool, 10, hasExternalTokens: true);
         Subtree right = HeapLeaf(pool, 10, hasExternalTokens: true);
-        left.Heap!.ExternalScannerState = ExternalScannerState.Create(new byte[] { 7, 8, 9 });
-        right.Heap!.ExternalScannerState = ExternalScannerState.Create(new byte[] { 7, 8, 9 });
+        {
+            ExternalScannerState _st = ExternalScannerState.Create(new byte[] { 7, 8, 9 });
+            ref SubtreeHeapData _hd = ref SubtreeArena.Get(left);
+            _st.WriteTo(ref _hd.ExternalScannerState);
+        }
+        {
+            ExternalScannerState _st = ExternalScannerState.Create(new byte[] { 7, 8, 9 });
+            ref SubtreeHeapData _hd = ref SubtreeArena.Get(right);
+            _st.WriteTo(ref _hd.ExternalScannerState);
+        }
         Assert.True(SubtreeOps.ExternalScannerStateEq(left, right));
 
-        right.Heap!.ExternalScannerState = ExternalScannerState.Create(new byte[] { 7, 8 });
+        {
+            ExternalScannerState _st = ExternalScannerState.Create(new byte[] { 7, 8 });
+            ref SubtreeHeapData _hd = ref SubtreeArena.Get(right);
+            _st.WriteTo(ref _hd.ExternalScannerState);
+        }
         Assert.False(SubtreeOps.ExternalScannerStateEq(left, right));
     }
 
@@ -142,16 +158,16 @@ public class SubtreeUnitTests
         Subtree leaf = HeapLeaf(pool);
         TsArray<Subtree> source = new TsArray<Subtree>();
         source.Push(leaf);
-        Assert.Equal(1, leaf.Heap!.RefCount);
+        Assert.Equal(1, SubtreeArena.Get(leaf).RefCount);
 
         TsArray<Subtree> destination = new TsArray<Subtree>();
         SubtreeOps.ArrayCopy(source, ref destination);
         Assert.Equal(1u, destination.Size);
-        Assert.Equal(2, leaf.Heap!.RefCount);
+        Assert.Equal(2, SubtreeArena.Get(leaf).RefCount);
 
         SubtreeOps.ArrayClear(pool, ref destination);
         Assert.Equal(0u, destination.Size);
-        Assert.Equal(1, leaf.Heap!.RefCount);
+        Assert.Equal(1, SubtreeArena.Get(leaf).RefCount);
 
         SubtreeOps.ArrayDelete(pool, ref source);
         Assert.Equal(0u, source.Size);
@@ -316,11 +332,15 @@ public class SubtreeUnitTests
     {
         SubtreePool pool = new SubtreePool(4);
         Subtree leaf = HeapLeaf(pool, 10, hasExternalTokens: true);
-        leaf.Heap!.ExternalScannerState = ExternalScannerState.Create(new byte[] { 7, 8, 9 });
+        {
+            ExternalScannerState _st = ExternalScannerState.Create(new byte[] { 7, 8, 9 });
+            ref SubtreeHeapData _hd = ref SubtreeArena.Get(leaf);
+            _st.WriteTo(ref _hd.ExternalScannerState);
+        }
         Subtree copy = SubtreeOps.Clone(leaf);
         Assert.Equal(3u, SubtreeOps.GetExternalScannerState(copy).Length);
         Assert.True(SubtreeOps.ExternalScannerStateEq(leaf, copy));
-        Assert.NotSame(leaf.Heap, copy.Heap);
+        Assert.NotEqual(leaf.Handle, copy.Handle);
         pool.Delete();
     }
 
@@ -552,12 +572,12 @@ public class SubtreeUnitTests
         Subtree first = Node(pool, 24, InlineLeaf(pool, 10), InlineLeaf(pool, 10));
         Subtree second = Node(pool, 24, first, InlineLeaf(pool, 10));
         SubtreeOps.Retain(first);
-        Assert.Equal(2, first.Heap!.RefCount);
+        Assert.Equal(2, SubtreeArena.Get(first).RefCount);
 
         TsArray<Subtree> stack = new TsArray<Subtree>();
         SubtreeOps.Compress(second, 5, JsonLanguage, ref stack);
         Assert.Equal(0u, stack.Size);
-        Assert.Equal(2, first.Heap!.RefCount);
+        Assert.Equal(2, SubtreeArena.Get(first).RefCount);
         pool.Delete();
     }
 

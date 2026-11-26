@@ -13,6 +13,8 @@
 // - The external scanner payload is the IExternalScanner object; destroy is Dispose.
 
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using TreeSitter.Abi;
 using TreeSitter.Parsing;
 using TreeSitter.Subtrees;
@@ -194,6 +196,36 @@ public sealed class Parser
         parseState.HasError = false;
     }
 
+    /// <summary>Releases arena-held subtrees (ts_parser_delete).</summary>
+    ~Parser()
+    {
+        // Release arena-held subtrees (A5). Do not dispose the external scanner here:
+        // it is a managed object and may have been finalized already.
+        if (!oldTree.IsNull)
+        {
+            SubtreeOps.Release(treePool, oldTree);
+            oldTree = Subtree.Null;
+        }
+
+        if (!finishedTree.IsNull)
+        {
+            SubtreeOps.Release(treePool, finishedTree);
+            finishedTree = Subtree.Null;
+        }
+
+        // ts_parser__set_cached_token(self, 0, NULL_SUBTREE, NULL_SUBTREE): releases only
+        // the cached tokens that are set.
+        SetCachedToken(0, Subtree.Null, Subtree.Null);
+
+        stack.Clear();
+        reusableNode.Clear();
+
+        // trailing_extras, trailing_extras2 and scratch_trees do not own their elements:
+        // ts_parser_delete frees only their memory (array_delete), so nothing is released.
+    }
+
+    private SubtreePool? releasePool;
+
     /// <summary>ts_parser_parse</summary>
     /// <returns>The tree, or null when there is no language, the old tree has another
     /// language, or the parse was stopped by the progress callback.</returns>
@@ -205,6 +237,11 @@ public sealed class Parser
         {
             return null;
         }
+
+        // Trees released by finalizers since the last parse go back to this thread's caches.
+        // Not through treePool: its tree stack keeps the state of a canceled balancing
+        // between parse calls, and a release clears that stack.
+        SubtreeArena.ReleasePending(releasePool ??= new SubtreePool(0));
 
         lexer.SetInput(input);
         includedRangeDifferences.Clear();
@@ -291,6 +328,7 @@ public sealed class Parser
                             goto exit;
                         }
 
+                        GC.KeepAlive(oldTree);
                         return null;
                     }
 
@@ -339,6 +377,7 @@ public sealed class Parser
         if (!BalanceSubtree())
         {
             canceledBalancing = true;
+            GC.KeepAlive(oldTree);
             return null;
         }
 
@@ -354,6 +393,7 @@ public sealed class Parser
         finishedTree = Subtree.Null;
 
     exit:
+        GC.KeepAlive(oldTree);
         Reset();
         return result;
     }
@@ -476,6 +516,7 @@ public sealed class Parser
     {
         bool didBreakDown = false;
         bool pending;
+        Language lang = Lang;
 
         do
         {
@@ -487,34 +528,64 @@ public sealed class Parser
 
             didBreakDown = true;
             pending = false;
+            ref StackSlice popBase = ref MemoryMarshal.GetArrayDataReference(pop.Contents!);
             for (uint i = 0; i < pop.Size; i++)
             {
-                StackSlice slice = pop.Get(i);
+                StackSlice slice = Unsafe.Add(ref popBase, (nint)i);
                 ushort state = stack.State(slice.Version);
                 Subtree parent = slice.Subtrees.Front();
 
-                for (uint j = 0, n = parent.ChildCount; j < n; j++)
+                if ((parent.Value & 1UL) == 0)
                 {
-                    Subtree child = parent.Children[(int)j];
-                    pending = child.ChildCount > 0;
-
-                    if (child.IsError)
+                    ref SubtreeHeapData parentHeap = ref SubtreeArena.Get(parent);
+                    uint n = parentHeap.ChildCount;
+                    if (n > 0)
                     {
-                        state = ErrorCosts.ErrorState;
-                    }
-                    else if (!child.Extra)
-                    {
-                        state = Lang.NextState(state, child.Symbol);
-                    }
+                        ref Subtree childrenBase = ref MemoryMarshal.GetArrayDataReference(
+                            SubtreeArena.GetChildren(parentHeap.ChildrenHandle));
+                        for (uint j = 0; j < n; j++)
+                        {
+                            Subtree child = Unsafe.Add(ref childrenBase, (nint)j);
+                            ulong childRaw = child.Value;
+                            if ((childRaw & 1UL) != 0)
+                            {
+                                pending = false;
+                                if ((childRaw & (1UL << 3)) == 0)
+                                {
+                                    ushort childSym = (ushort)((childRaw >> 8) & 0xFF);
+                                    state = lang.NextState(state, childSym);
+                                }
+                            }
+                            else
+                            {
+                                ref SubtreeHeapData childHeap = ref SubtreeArena.Get(child);
+                                pending = childHeap.ChildCount > 0;
+                                ushort childSym = childHeap.Symbol;
+                                if (childSym == BuiltinSymbols.Error)
+                                {
+                                    state = ErrorCosts.ErrorState;
+                                }
+                                else if ((childHeap.Flags & SubtreeFlags.Extra) == 0)
+                                {
+                                    state = lang.NextState(state, childSym);
+                                }
 
-                    SubtreeOps.Retain(child);
-                    stack.Push(slice.Version, child, pending, state);
+                                Interlocked.Increment(ref childHeap.RefCount);
+                            }
+
+                            stack.Push(slice.Version, child, pending, state);
+                        }
+                    }
                 }
 
-                for (uint j = 1; j < slice.Subtrees.Size; j++)
+                if (slice.Subtrees.Size > 1)
                 {
-                    Subtree tree = slice.Subtrees.Get(j);
-                    stack.Push(slice.Version, tree, false, state);
+                    ref Subtree subtreesBase = ref MemoryMarshal.GetArrayDataReference(slice.Subtrees.Contents!);
+                    for (uint j = 1; j < slice.Subtrees.Size; j++)
+                    {
+                        Subtree tree = Unsafe.Add(ref subtreesBase, (nint)j);
+                        stack.Push(slice.Version, tree, false, state);
+                    }
                 }
 
                 SubtreeOps.Release(treePool, parent);
@@ -727,13 +798,15 @@ public sealed class Parser
     /// <summary>ts_parser__external_scanner_deserialize</summary>
     private void ExternalScannerDeserialize(Subtree externalToken)
     {
-        ReadOnlySpan<byte> data = ReadOnlySpan<byte>.Empty;
-        if (!externalToken.IsNull)
+        if (externalToken.IsNull)
         {
-            data = externalToken.Heap!.ExternalScannerState.Data;
+            Scanner.Deserialize(ReadOnlySpan<byte>.Empty);
         }
-
-        Scanner.Deserialize(data);
+        else
+        {
+            ref SubtreeHeapData hd = ref SubtreeArena.Get(externalToken);
+            Scanner.Deserialize(ExternalScannerState.DataOf(in hd.ExternalScannerState));
+        }
     }
 
     /// <summary>ts_parser__external_scanner_scan</summary>
@@ -750,10 +823,56 @@ public sealed class Parser
     /// <summary>ts_parser__can_reuse_first_leaf</summary>
     private bool CanReuseFirstLeaf(ushort state, Subtree tree, in TableEntry tableEntry)
     {
-        ushort leafSymbol = tree.LeafSymbol;
-        ushort leafState = tree.LeafParseState;
-        LexerMode currentLexMode = Lang.LexModeForState(state);
-        LexerMode leafLexMode = Lang.LexModeForState(leafState);
+        ulong raw = tree.Value;
+        ushort leafSymbol;
+        ushort leafState;
+        ushort parseState;
+        bool isKeyword;
+        uint sizeBytes;
+        if ((raw & 1UL) != 0)
+        {
+            leafSymbol = (ushort)((raw >> 8) & 0xFF);
+            leafState = (ushort)((raw >> 16) & 0xFFFF);
+            parseState = leafState;
+            isKeyword = (raw & (1UL << 6)) != 0;
+            sizeBytes = (uint)((raw >> 56) & 0xFF);
+        }
+        else
+        {
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(tree);
+            parseState = heap.ParseState;
+            if (heap.ChildCount == 0)
+            {
+                leafSymbol = heap.Symbol;
+                leafState = parseState;
+            }
+            else
+            {
+                leafSymbol = heap.FirstLeafSymbol;
+                leafState = heap.FirstLeafParseState;
+            }
+
+            isKeyword = (heap.Flags & SubtreeFlags.IsKeyword) != 0;
+            sizeBytes = heap.Size.Bytes;
+        }
+
+        return CanReuseFirstLeafCore(state, leafSymbol, leafState, parseState, isKeyword, sizeBytes, in tableEntry);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool CanReuseFirstLeafCore(
+        ushort state,
+        ushort leafSymbol,
+        ushort leafState,
+        ushort parseState,
+        bool isKeyword,
+        uint sizeBytes,
+        in TableEntry tableEntry)
+    {
+        LanguageTables tables = Lang.Tables;
+        LexerMode[] lexModes = tables.LexModes!;
+        ref LexerMode modesBase = ref MemoryMarshal.GetArrayDataReference(lexModes);
+        LexerMode currentLexMode = Unsafe.Add(ref modesBase, (nint)state);
 
         // At the end of a non-terminal extra node, the lexer normally returns
         // NULL, which indicates that the parser should look for a reduce action
@@ -765,18 +884,18 @@ public sealed class Parser
         }
 
         // If the token was created in a state with the same set of lookaheads, it is reusable.
-        if (
-            tableEntry.ActionCount > 0 &&
-            leafLexMode == currentLexMode &&
-            (
-                leafSymbol != Lang.Tables.KeywordCaptureToken ||
-                (!tree.IsKeyword && tree.ParseState == state)))
+        if (tableEntry.ActionCount > 0)
         {
-            return true;
+            LexerMode leafLexMode = Unsafe.Add(ref modesBase, (nint)leafState);
+            if (leafLexMode == currentLexMode &&
+                (leafSymbol != tables.KeywordCaptureToken || (!isKeyword && parseState == state)))
+            {
+                return true;
+            }
         }
 
         // Empty tokens are not reusable in states with different lookaheads.
-        if (tree.Size.Bytes == 0 && leafSymbol != BuiltinSymbols.End)
+        if (sizeBytes == 0 && leafSymbol != BuiltinSymbols.End)
         {
             return false;
         }
@@ -994,9 +1113,10 @@ public sealed class Parser
 
             if (foundExternalToken)
             {
-                SubtreeHeap mutResult = result.Heap!;
-                mutResult.ExternalScannerState = ExternalScannerState.Create(
+                ref SubtreeHeapData mutResult = ref SubtreeArena.Get(result);
+                ExternalScannerState extState = ExternalScannerState.Create(
                     serializationBuffer.AsSpan(0, (int)externalScannerStateLen));
+                extState.WriteTo(ref mutResult.ExternalScannerState);
                 mutResult.SetFlag(SubtreeFlags.HasExternalScannerStateChange, externalScannerStateChanged);
             }
         }
@@ -1065,6 +1185,44 @@ public sealed class Parser
             startPosition,
             endPosition);
 
+    /// <summary>ts_subtree_external_scanner_state_eq without copying ShortBuffer or allocating byte[].</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool ExternalScannerStatesMatch(Subtree self, Subtree other)
+    {
+        if (self.Value == other.Value)
+        {
+            return true;
+        }
+
+        return ExternalScannerStatesMatchSlow(self, other);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool ExternalScannerStatesMatchSlow(Subtree self, Subtree other)
+    {
+        ReadOnlySpan<byte> left = ReadOnlySpan<byte>.Empty;
+        if (!self.IsNull && (self.Value & 1UL) == 0)
+        {
+            ref SubtreeHeapData leftHeap = ref SubtreeArena.Get(self);
+            if ((leftHeap.Flags & SubtreeFlags.HasExternalTokens) != 0 && leftHeap.ChildCount == 0)
+            {
+                left = ExternalScannerState.DataOf(in leftHeap.ExternalScannerState);
+            }
+        }
+
+        ReadOnlySpan<byte> right = ReadOnlySpan<byte>.Empty;
+        if (!other.IsNull && (other.Value & 1UL) == 0)
+        {
+            ref SubtreeHeapData rightHeap = ref SubtreeArena.Get(other);
+            if ((rightHeap.Flags & SubtreeFlags.HasExternalTokens) != 0 && rightHeap.ChildCount == 0)
+            {
+                right = ExternalScannerState.DataOf(in rightHeap.ExternalScannerState);
+            }
+        }
+
+        return left.SequenceEqual(right);
+    }
+
     /// <summary>ts_parser__reuse_node</summary>
     private Subtree ReuseNode(
         uint version,
@@ -1073,24 +1231,46 @@ public sealed class Parser
         Subtree lastExternalToken,
         ref TableEntry tableEntry)
     {
-        Subtree result;
-        while (!(result = reusableNode.Tree).IsNull)
+        Language lang = Lang;
+        while (reusableNode.Stack.Size > 0)
         {
-            uint byteOffset = reusableNode.ByteOffset;
-            uint endByteOffset = byteOffset + result.TotalBytes;
-
-            // Do not reuse an EOF node if the included ranges array has changes
-            // later on in the file.
-            if (result.IsEof)
+            ref ReusableNodeEntry top = ref Unsafe.Add(
+                ref MemoryMarshal.GetArrayDataReference(reusableNode.Stack.Contents!),
+                (nint)(reusableNode.Stack.Size - 1));
+            Subtree result = top.Tree;
+            if (result.IsNull)
             {
-                endByteOffset = uint.MaxValue;
+                break;
             }
+
+            uint byteOffset = top.ByteOffset;
+            ulong raw = result.Value;
+
+            // Step 1: position check. Most skipped nodes fail byteOffset < position, where C
+            // only computes end_byte_offset and checks ts_subtree_is_eof - do not decode flags
+            // or first_leaf fields or compute Point.Add until byteOffset == position.
+            ushort symbol;
+            uint totalBytes;
+            if ((raw & 1UL) != 0)
+            {
+                symbol = (ushort)((raw >> 8) & 0xFF);
+                totalBytes = ((uint)((raw >> 48) & 0xFF)) + ((uint)((raw >> 56) & 0xFF));
+            }
+            else
+            {
+                ref SubtreeHeapData c = ref SubtreeArena.Get(result);
+                symbol = c.Symbol;
+                totalBytes = c.Padding.Bytes + c.Size.Bytes;
+            }
+
+            bool isEof = symbol == BuiltinSymbols.End;
+            uint endByteOffset = isEof ? uint.MaxValue : byteOffset + totalBytes;
 
             if (byteOffset > position)
             {
                 if (IsLogging)
                 {
-                    Log("before_reusable_node symbol:" + TreeName(result));
+                    Log("before_reusable_node symbol:" + SymName(symbol));
                 }
 
                 break;
@@ -1100,7 +1280,7 @@ public sealed class Parser
             {
                 if (IsLogging)
                 {
-                    Log("past_reusable_node symbol:" + TreeName(result));
+                    Log("past_reusable_node symbol:" + SymName(symbol));
                 }
 
                 if (endByteOffset <= position || !reusableNode.Descend())
@@ -1111,39 +1291,85 @@ public sealed class Parser
                 continue;
             }
 
-            if (!SubtreeOps.ExternalScannerStateEq(reusableNode.LastExternalToken, lastExternalToken))
+            if (!ExternalScannerStatesMatch(reusableNode.LastExternalToken, lastExternalToken))
             {
                 if (IsLogging)
                 {
-                    Log("reusable_node_has_different_external_scanner_state symbol:" + TreeName(result));
+                    Log("reusable_node_has_different_external_scanner_state symbol:" + SymName(symbol));
                 }
 
                 reusableNode.Advance();
                 continue;
             }
 
+            ushort leafSymbol;
+            ushort leafState;
+            ushort parseState;
+            uint sizeBytes;
+            uint lookaheadBytes;
+            bool hasChanges;
+            bool isMissing;
+            bool isFragile;
+            bool isKeyword;
+            if ((raw & 1UL) != 0)
+            {
+                leafSymbol = symbol;
+                leafState = (ushort)((raw >> 16) & 0xFFFF);
+                parseState = leafState;
+                sizeBytes = (uint)((raw >> 56) & 0xFF);
+                lookaheadBytes = (uint)((raw >> 44) & 0x0F);
+                hasChanges = (raw & (1UL << 4)) != 0;
+                isMissing = (raw & (1UL << 5)) != 0;
+                isFragile = false;
+                isKeyword = (raw & (1UL << 6)) != 0;
+            }
+            else
+            {
+                ref SubtreeHeapData c = ref SubtreeArena.Get(result);
+                SubtreeFlags flags = c.Flags;
+                parseState = c.ParseState;
+                if (c.ChildCount == 0)
+                {
+                    leafSymbol = symbol;
+                    leafState = parseState;
+                }
+                else
+                {
+                    leafSymbol = c.FirstLeafSymbol;
+                    leafState = c.FirstLeafParseState;
+                }
+
+                sizeBytes = c.Size.Bytes;
+                lookaheadBytes = c.LookaheadBytes;
+                hasChanges = (flags & SubtreeFlags.HasChanges) != 0;
+                isMissing = (flags & SubtreeFlags.IsMissing) != 0;
+                isFragile = (flags & (SubtreeFlags.FragileLeft | SubtreeFlags.FragileRight)) != 0;
+                isKeyword = (flags & SubtreeFlags.IsKeyword) != 0;
+            }
+
             string? reason = null;
-            if (result.HasChanges)
+            if (hasChanges)
             {
                 reason = "has_changes";
             }
-            else if (result.IsError)
+            else if (symbol == BuiltinSymbols.Error)
             {
                 reason = "is_error";
             }
-            else if (result.IsMissing)
+            else if (isMissing)
             {
                 reason = "is_missing";
             }
-            else if (result.IsFragile)
+            else if (isFragile)
             {
                 reason = "is_fragile";
             }
-            else if (HasIncludedRangeDifference(
+            else if (includedRangeDifferenceIndex < includedRangeDifferences.Size &&
+                     HasIncludedRangeDifference(
                          byteOffset,
-                         result.IsEof
+                         isEof
                              ? endByteOffset
-                             : endByteOffset + result.LookaheadBytes))
+                             : endByteOffset + lookaheadBytes))
             {
                 reason = "contains_different_included_range";
             }
@@ -1152,7 +1378,7 @@ public sealed class Parser
             {
                 if (IsLogging)
                 {
-                    Log("cant_reuse_node_" + reason + " tree:" + TreeName(result));
+                    Log("cant_reuse_node_" + reason + " tree:" + SymName(symbol));
                 }
 
                 if (!reusableNode.Descend())
@@ -1165,13 +1391,12 @@ public sealed class Parser
                 continue;
             }
 
-            ushort leafSymbol = result.LeafSymbol;
-            Lang.GetTableEntry(state, leafSymbol, out tableEntry);
-            if (!CanReuseFirstLeaf(state, result, tableEntry))
+            lang.GetTableEntry(state, leafSymbol, out tableEntry);
+            if (!CanReuseFirstLeafCore(state, leafSymbol, leafState, parseState, isKeyword, sizeBytes, in tableEntry))
             {
                 if (IsLogging)
                 {
-                    Log("cant_reuse_node symbol:" + TreeName(result) + ", first_leaf_symbol:" + SymName(leafSymbol));
+                    Log("cant_reuse_node symbol:" + SymName(symbol) + ", first_leaf_symbol:" + SymName(leafSymbol));
                 }
 
                 reusableNode.AdvancePastLeaf();
@@ -1180,7 +1405,7 @@ public sealed class Parser
 
             if (IsLogging)
             {
-                Log("reuse_node symbol:" + TreeName(result));
+                Log("reuse_node symbol:" + SymName(symbol));
             }
 
             SubtreeOps.Retain(result);
@@ -1300,7 +1525,14 @@ public sealed class Parser
             0,
             Lang);
 
-        return SelectTree(left, scratchTree);
+        bool selected = SelectTree(left, scratchTree);
+
+        // In C the scratch tree lives in the reused scratch_trees buffer and is never
+        // released (it does not retain its children). Here it is an arena slot: give the
+        // slot and its children array back without releasing the children.
+        SubtreeArena.FreeChildren(scratchTree.Handle);
+        SubtreeArena.Free(scratchTree.Handle);
+        return selected;
     }
 
     /// <summary>ts_parser__shift</summary>
@@ -1417,7 +1649,7 @@ public sealed class Parser
 
             ushort state = stack.State(sliceVersion);
             ushort nextState = Lang.NextState(state, symbol);
-            SubtreeHeap parentHeap = parent.Heap!;
+            ref SubtreeHeapData parentHeap = ref SubtreeArena.Get(parent);
             if (endOfNonTerminalExtra && nextState == state)
             {
                 parentHeap.SetFlag(SubtreeFlags.Extra, true);
@@ -1494,7 +1726,7 @@ public sealed class Parser
                     root = SubtreeOps.NewNode(
                         tree.Symbol,
                         ref trees,
-                        tree.Heap!.ProductionId,
+                        SubtreeArena.Get(tree).ProductionId,
                         Lang);
                     SubtreeOps.Release(treePool, tree);
                     break;
@@ -2099,6 +2331,21 @@ public sealed class Parser
         LogStack();
     }
 
+    /// <summary>ts_parser__check_progress (without lookahead or position)</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool CheckProgress(uint operations)
+    {
+        uint nextCount = operationCount + operations;
+        if (nextCount < OpCountPerParserCallbackCheck)
+        {
+            operationCount = nextCount;
+            return true;
+        }
+
+        operationCount = 0;
+        return parseOptions?.ProgressCallback is not { } callback || !callback(parseState);
+    }
+
     /// <summary>ts_parser__check_progress</summary>
     private bool CheckProgress(ref Subtree lookahead, bool hasLookahead, uint? position, uint operations)
     {
@@ -2537,34 +2784,43 @@ public sealed class Parser
     /// <summary>ts_parser__balance_subtree</summary>
     private bool BalanceSubtree()
     {
-        Subtree finished = finishedTree;
-        Subtree noLookahead = Subtree.Null;
+        ref TsArray<Subtree> treeStack = ref treePool.TreeStack;
 
         // If we haven't canceled balancing in progress before, then we want to clear the tree stack and
         // push the initial finished tree onto it. Otherwise, if we're resuming balancing after a
         // cancellation, we don't want to clear the tree stack.
         if (!canceledBalancing)
         {
-            treePool.TreeStack.Clear();
-            if (finished.ChildCount > 0 && finished.Heap!.RefCount == 1)
+            treeStack.Clear();
+            Subtree finished = finishedTree;
+            if (!finished.IsNull && (finished.Value & 1UL) == 0)
             {
-                treePool.TreeStack.Push(finished);
+                ref SubtreeHeapData finishedHeap = ref SubtreeArena.Get(finished);
+                if (finishedHeap.ChildCount > 0 && finishedHeap.RefCount == 1)
+                {
+                    treeStack.Push(finished);
+                }
             }
         }
 
-        while (treePool.TreeStack.Size > 0)
+        Language lang = Lang;
+        while (treeStack.Size > 0)
         {
-            if (!CheckProgress(ref noLookahead, false, null, 1))
+            if (!CheckProgress(1))
             {
                 return false;
             }
 
-            Subtree tree = treePool.TreeStack.Get(treePool.TreeStack.Size - 1);
+            Subtree tree = treeStack.Back();
+            ref SubtreeHeapData treeHeap = ref SubtreeArena.Get(tree);
+            uint childCount = treeHeap.ChildCount;
+            Subtree[] treeChildren = SubtreeArena.GetChildren(treeHeap.ChildrenHandle);
 
-            if (tree.Heap!.RepeatDepth > 0)
+            if (treeHeap.RepeatDepth > 0)
             {
-                Subtree child1 = tree.Children[0];
-                Subtree child2 = tree.Children[(int)tree.Heap.ChildCount - 1];
+                ref Subtree childrenBase0 = ref MemoryMarshal.GetArrayDataReference(treeChildren);
+                Subtree child1 = childrenBase0;
+                Subtree child2 = Unsafe.Add(ref childrenBase0, (nint)(childCount - 1));
                 long repeatDelta = (long)child1.RepeatDepth - (long)child2.RepeatDepth;
                 if (repeatDelta > 0)
                 {
@@ -2572,14 +2828,14 @@ public sealed class Parser
 
                     for (uint i = n / 2; i > 0; i /= 2)
                     {
-                        SubtreeOps.Compress(tree, i, Lang, ref treePool.TreeStack);
+                        SubtreeOps.Compress(tree, i, lang, ref treeStack);
                         n -= i;
 
                         // We scale the operation count increment in `ts_parser__check_progress` proportionately to the compression
                         // size since larger values of i take longer to process. Shifting by 4 empirically provides good check
                         // intervals (e.g. 193 operations when i=3100) to prevent blocking during large compressions.
                         byte operations = (byte)((i >> 4) > 0 ? (i >> 4) : 1);
-                        if (!CheckProgress(ref noLookahead, false, null, operations))
+                        if (!CheckProgress(operations))
                         {
                             return false;
                         }
@@ -2587,14 +2843,19 @@ public sealed class Parser
                 }
             }
 
-            treePool.TreeStack.Pop();
+            treeStack.Size--;
 
-            for (uint i = 0; i < tree.Heap.ChildCount; i++)
+            ref Subtree childrenBase = ref MemoryMarshal.GetArrayDataReference(treeChildren);
+            for (uint i = 0; i < childCount; i++)
             {
-                Subtree child = tree.Children[(int)i];
-                if (child.ChildCount > 0 && child.Heap!.RefCount == 1)
+                Subtree child = Unsafe.Add(ref childrenBase, (nint)i);
+                if ((child.Value & 1UL) == 0)
                 {
-                    treePool.TreeStack.Push(child);
+                    ref SubtreeHeapData childHeap = ref SubtreeArena.Get(child);
+                    if (childHeap.ChildCount > 0 && childHeap.RefCount == 1)
+                    {
+                        treeStack.Push(child);
+                    }
                 }
             }
         }

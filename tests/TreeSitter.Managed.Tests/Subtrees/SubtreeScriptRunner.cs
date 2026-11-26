@@ -40,14 +40,12 @@ internal static class SubtreeScriptRunner
         private readonly SubtreePool _pool = new SubtreePool(32);
         private readonly StringBuilder _output = new StringBuilder();
 
-        /// <summary>The label of every heap node that was printed. The dictionary keeps the
-        /// nodes alive, so a label is never reused for another node.</summary>
-        private readonly Dictionary<SubtreeHeap, int> _labels = new Dictionary<SubtreeHeap, int>();
+        /// <summary>The label of every heap node that was printed, keyed by arena handle.</summary>
+        private readonly Dictionary<int, int> _labels = new Dictionary<int, int>();
 
-        /// <summary>The labels of the nodes that are not reachable from a register any more.
-        /// Their memory can be reused by the next allocation, so they must not be mistaken
-        /// for the node that was printed before.</summary>
-        private readonly HashSet<SubtreeHeap> _dead = new HashSet<SubtreeHeap>();
+        /// <summary>Handles of nodes not reachable from a register any more. Their slot can be
+        /// reused by the next allocation, so they must not be mistaken for the old node.</summary>
+        private readonly HashSet<int> _dead = new HashSet<int>();
 
         private int _nextLabel;
         private Language? _language;
@@ -725,7 +723,11 @@ internal static class SubtreeScriptRunner
                 return Error(lineNumber, "invalid hex data '{0}'", arguments[1]);
             }
 
-            tree.Heap!.ExternalScannerState = ExternalScannerState.Create(data);
+            {
+                ExternalScannerState state = ExternalScannerState.Create(data);
+                ref SubtreeHeapData hd = ref SubtreeArena.Get(tree);
+                state.WriteTo(ref hd.ExternalScannerState);
+            }
             return true;
         }
 
@@ -2269,15 +2271,15 @@ internal static class SubtreeScriptRunner
         // ------------------------------------------------------------ labels
 
         /// <summary>The heap nodes that are still reachable from the registers.</summary>
-        private static void CollectLive(Subtree tree, HashSet<SubtreeHeap> live)
+        private static void CollectLive(Subtree tree, HashSet<int> live)
         {
             if (tree.IsNull || tree.IsInline)
             {
                 return;
             }
 
-            SubtreeHeap heap = tree.Heap!;
-            if (!live.Add(heap))
+            int handle = tree.Handle;
+            if (!live.Add(handle))
             {
                 return;
             }
@@ -2294,17 +2296,17 @@ internal static class SubtreeScriptRunner
         /// node that was printed before.</summary>
         private void MarkDead()
         {
-            HashSet<SubtreeHeap> live = new HashSet<SubtreeHeap>();
+            HashSet<int> live = new HashSet<int>();
             for (int i = 0; i < RegisterCount; i++)
             {
                 CollectLive(_registers[i], live);
             }
 
-            foreach (SubtreeHeap heap in _labels.Keys)
+            foreach (int handle in _labels.Keys)
             {
-                if (!live.Contains(heap))
+                if (!live.Contains(handle))
                 {
-                    _dead.Add(heap);
+                    _dead.Add(handle);
                 }
             }
         }
@@ -2358,17 +2360,18 @@ internal static class SubtreeScriptRunner
                 return;
             }
 
-            SubtreeHeap heap = tree.Heap!;
-            if (_labels.TryGetValue(heap, out int known) && !_dead.Contains(heap))
+            int handle = tree.Handle;
+            if (_labels.TryGetValue(handle, out int known) && !_dead.Contains(handle))
             {
                 _output.AppendFormat(CultureInfo.InvariantCulture, "@#{0}\n", known);
                 return;
             }
 
             int label = _nextLabel++;
-            _labels[heap] = label;
-            _dead.Remove(heap);
+            _labels[handle] = label;
+            _dead.Remove(handle);
 
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(tree);
             Length heapPadding = heap.Padding;
             Length heapSize = heap.Size;
             _output.AppendFormat(
@@ -2425,8 +2428,7 @@ internal static class SubtreeScriptRunner
             else if (heap.HasFlag(SubtreeFlags.HasExternalTokens))
             {
                 _output.Append("external_state=");
-                ExternalScannerState state = heap.ExternalScannerState;
-                ReadOnlySpan<byte> data = state.Data;
+                ReadOnlySpan<byte> data = ExternalScannerState.DataOf(in heap.ExternalScannerState);
                 for (int i = 0; i < data.Length; i++)
                 {
                     byte b = data[i];

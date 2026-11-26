@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <RootNamespace>TreeSitter</RootNamespace>
+    <!-- SubtreeArena: a heap Subtree holds the address of its data (measured, docs/ARENA.md). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Description>Fully managed port of the tree-sitter incremental parsing runtime.</Description>
   </PropertyGroup>
 </Project>

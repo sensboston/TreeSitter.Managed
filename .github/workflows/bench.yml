@@ -1,0 +1,56 @@
+name: bench
+
+# The port against the native runtime (the oracle library) in the same process:
+# full parse, one-byte edit + reparse, highlights.scm captures. Started by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: BenchmarkDotNet filter
+        default: '*RuntimeBenchmarks*'
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Build oracle
+        shell: bash
+        run: bash tools/build-oracle.sh
+
+      - name: Run benchmarks
+        shell: bash
+        run: |
+          dotnet run -c Release -f net10.0 --project bench/TreeSitter.Managed.Benchmarks -- \
+            --filter '${{ github.event.inputs.filter }}' --job short --exporters markdown 2>&1 | tee bench.log
+          {
+            echo "### ${{ matrix.os }} ($(git rev-parse --short HEAD))"
+            echo
+            grep -E '^\|' bench.log | grep -vE '^\|[ -]*\|[ -]*\|' || true
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ matrix.os }}
+          path: |
+            bench.log
+            BenchmarkDotNet.Artifacts/results/*
+          if-no-files-found: ignore

@@ -1,6 +1,6 @@
 # Subtree arena: design
 
-Status: proposal (option 1 of docs/PERFORMANCE.md). The parse algorithm stays one to one;
+Status: implemented in 1.0.0 (option 1 of docs/PERFORMANCE.md). Results: docs/BENCHMARKS.md. The parse algorithm stays one to one;
 only the representation of subtrees changes.
 
 Goal: the speed of the native runtime or better, with results that stay identical to it
@@ -136,3 +136,14 @@ each phase with the same perf method, before deciding on the next.
   keep the lock off the hot path; measured with a parallel parse test in phase C.
 - Memory is not returned to the OS after a very large parse (segments are kept). Acceptable
   for 1.x; trimming can follow.
+
+## Done and next
+
+Implemented: A1, A2, A4, A5 (finalizers release through a queue drained by the next parse),
+and instead of the slab arena of A3, a per-thread pool of child arrays. Beyond the design:
+the Subtree value holds the address of its data (pinned segments) instead of a handle, and
+SubtreeHeapData uses the union layout of C (84 bytes).
+
+Next: the nodes of the parse stack (StackNode) are still objects with references; moving them
+into an arena of structs removes the remaining write barriers (about 4% of a parse).
+

@@ -205,6 +205,7 @@ public sealed partial class QueryCursor
     private Query _query = null!;
 
     private readonly TreeCursor _cursor = new();
+    private ushort[]? _supertypes;
 
     private TsArray<QueryState> _states;
 
@@ -343,17 +344,21 @@ public sealed partial class QueryCursor
         uint stateIndex = 0;
         if (_finishedStatesHeapSize > 0)
         {
+            uint earliestOrder = _finishedStates.Get(0).HeapInsertOrder;
             for (uint i = 1; i < _finishedStates.Size; i++)
             {
-                QueryState candidate = _finishedStates.Get(i);
-                QueryState earliest = _finishedStates.Get(stateIndex);
-                if (candidate.HeapInsertOrder < earliest.HeapInsertOrder) stateIndex = i;
+                ref QueryState candidate = ref _finishedStates.Get(i);
+                if (candidate.HeapInsertOrder < earliestOrder)
+                {
+                    stateIndex = i;
+                    earliestOrder = candidate.HeapInsertOrder;
+                }
             }
         }
 
         ref QueryState state = ref _finishedStates.Get(stateIndex);
         if (state.Id == uint.MaxValue) state.Id = _nextStateId++;
-        match = new QueryMatch(state.Id, state.PatternIndex, CaptureArray(state));
+        match = new QueryMatch(state.Id, state.PatternIndex, CaptureArray(ref state));
 
         _captureListPool.Release(state.CaptureListId);
 
@@ -463,7 +468,7 @@ public sealed partial class QueryCursor
                 if (nodeOutsideOfRange)
                 {
                     state.ConsumedCaptureCount++;
-                    FinishedStateSiftDown(_finishedStates, 0, _captureListPool);
+                    FinishedStateSiftDown(ref _finishedStates, 0, _captureListPool);
                     continue;
                 }
 
@@ -506,7 +511,7 @@ public sealed partial class QueryCursor
                     ? ref _finishedStates.Get(captureStateIndex)
                     : ref _states.Get(captureStateIndex));
                 if (state.Id == uint.MaxValue) state.Id = _nextStateId++;
-                match = new QueryMatch(state.Id, state.PatternIndex, CaptureArray(state));
+                match = new QueryMatch(state.Id, state.PatternIndex, CaptureArray(ref state));
                 captureIndex = state.ConsumedCaptureCount;
                 state.ConsumedCaptureCount++;
 
@@ -514,7 +519,7 @@ public sealed partial class QueryCursor
                 // (the next capture is now later in the document). Restore heap order.
                 if (fromFinished)
                 {
-                    FinishedStateSiftDown(_finishedStates, 0, _captureListPool);
+                    FinishedStateSiftDown(ref _finishedStates, 0, _captureListPool);
                 }
 
                 return true;
@@ -546,8 +551,9 @@ public sealed partial class QueryCursor
             {
                 while (_states.Size > 0)
                 {
-                    QueryState state = _states.Pop();
+                    ref QueryState state = ref _states.Get(_states.Size - 1);
                     _captureListPool.Release(state.CaptureListId);
+                    _states.Size--;
                 }
             }
 
@@ -655,10 +661,58 @@ public sealed partial class QueryCursor
                 Node node = _cursor.CurrentNode;
                 Node parentNode = _cursor.ParentNode();
 
+                // Read the fields of node and parentNode once (each Node/Subtree accessor
+                // looks a heap node up in the arena again).
+                Subtree nodeSubtree = node.Subtree;
+                Length nodeSize;
+                ushort nodeRawSymbol;
+                bool nodeSubtreeNamed;
+                bool nodeIsMissing;
+                bool nodeIsRepetition;
+                if (nodeSubtree.IsInline)
+                {
+                    nodeSize = nodeSubtree.Size;
+                    nodeRawSymbol = nodeSubtree.Symbol;
+                    nodeSubtreeNamed = nodeSubtree.Named;
+                    nodeIsMissing = nodeSubtree.IsMissing;
+                    nodeIsRepetition = false;
+                }
+                else
+                {
+                    ref SubtreeHeapData nh = ref SubtreeArena.Get(nodeSubtree);
+                    nodeSize = nh.Size;
+                    nodeRawSymbol = nh.Symbol;
+                    nodeSubtreeNamed = nh.HasFlag(SubtreeFlags.Named);
+                    nodeIsMissing = nh.HasFlag(SubtreeFlags.IsMissing);
+                    nodeIsRepetition =
+                        !nodeSubtreeNamed &&
+                        !nh.HasFlag(SubtreeFlags.Visible) &&
+                        nh.ChildCount != 0;
+                }
+
+                bool parentIsNull = parentNode.IsNull;
+                Length parentSize = default;
+                ushort parentRawSymbol = 0;
+                if (!parentIsNull)
+                {
+                    Subtree parentSubtree = parentNode.Subtree;
+                    if (parentSubtree.IsInline)
+                    {
+                        parentSize = parentSubtree.Size;
+                        parentRawSymbol = parentSubtree.Symbol;
+                    }
+                    else
+                    {
+                        ref SubtreeHeapData ph = ref SubtreeArena.Get(parentSubtree);
+                        parentSize = ph.Size;
+                        parentRawSymbol = ph.Symbol;
+                    }
+                }
+
                 bool parentIntersectsRange =
-                    parentNode.IsNull ||
-                    RangeIntersects(Range(parentNode), _includedRange);
-                QueryRange nodeRange = Range(node);
+                    parentIsNull ||
+                    RangeIntersects(Range(parentNode, parentSize), _includedRange);
+                QueryRange nodeRange = Range(node, nodeSize);
                 bool nodeIntersectsRange =
                     parentIntersectsRange && RangeIntersects(nodeRange, _includedRange);
                 bool nodeIntersectsContainingRange = RangeIntersects(nodeRange, _containingRange);
@@ -670,7 +724,8 @@ public sealed partial class QueryCursor
                     bool hasLaterSiblings;
                     bool hasLaterNamedSiblings;
                     bool canHaveLaterSiblingsWithThisField;
-                    ushort[] supertypes = new ushort[MaxNegatedFieldCount];
+                    // C uses a stack array; one buffer per cursor here (filled by CurrentStatus).
+                    ushort[] supertypes = _supertypes ??= new ushort[MaxNegatedFieldCount];
                     uint supertypeCount = MaxNegatedFieldCount;
                     _cursor.CurrentStatus(
                         out fieldId,
@@ -680,16 +735,27 @@ public sealed partial class QueryCursor
                         supertypes,
                         out supertypeCount);
 
-                    bool nodeIsError = node.Symbol == (ushort)BuiltinSymbolError;
+                    Language language = node.TreeOrNull!.Language;
+                    // Both aliases are node fields; read each once for this step.
+                    ushort nodeAlias = node.Alias;
+                    ushort parentAlias = parentNode.Alias;
+                    ushort nodeSymbol = language.PublicSymbol(nodeAlias != 0 ? nodeAlias : nodeRawSymbol);
+                    bool nodeIsNamed = nodeAlias != 0
+                        ? language.GetSymbolMetadata(nodeAlias).Named
+                        : nodeSubtreeNamed;
+                    bool nodeIsError = nodeSymbol == (ushort)BuiltinSymbolError;
                     bool parentIsError =
-                        !parentNode.IsNull && parentNode.Symbol == (ushort)BuiltinSymbolError;
+                        !parentIsNull &&
+                        language.PublicSymbol(parentAlias != 0 ? parentAlias : parentRawSymbol) ==
+                            (ushort)BuiltinSymbolError;
 
                     // Add new states for any patterns whose root node is a wildcard.
                     if (!nodeIsError)
                     {
+                        ReadOnlySpan<PatternEntry> patternMap = _query.PatternMap;
                         for (uint patternIndex = 0; patternIndex < _query.WildcardRootPatternCount; patternIndex++)
                         {
-                            PatternEntry pattern = _query.PatternMap[(int)patternIndex];
+                            PatternEntry pattern = patternMap[(int)patternIndex];
                             ref QueryStep step = ref _query.StepRef(pattern.StepIndex);
                             uint startDepth = _depth - step.Depth;
                             if (
@@ -706,11 +772,12 @@ public sealed partial class QueryCursor
                     }
 
                     // Add new states for any patterns whose root node matches this node.
-                    if (_query.PatternMapSearch(node.Symbol, out uint i))
+                    if (_query.PatternMapSearch(nodeSymbol, out uint i))
                     {
+                        ReadOnlySpan<PatternEntry> patternMap = _query.PatternMap;
                         for (; ; )
                         {
-                            PatternEntry pattern = _query.PatternMap[(int)i];
+                            PatternEntry pattern = patternMap[(int)i];
                             ref QueryStep step = ref _query.StepRef(pattern.StepIndex);
                             uint startDepth = _depth - step.Depth;
                             if (
@@ -725,10 +792,10 @@ public sealed partial class QueryCursor
 
                             // Advance to the next pattern whose root node matches this node.
                             i++;
-                            if (i == _query.PatternMap.Length) break;
-                            pattern = _query.PatternMap[(int)i];
+                            if (i == patternMap.Length) break;
+                            pattern = patternMap[(int)i];
                             step = ref _query.StepRef(pattern.StepIndex);
-                            if (step.Symbol != node.Symbol) break;
+                            if (step.Symbol != nodeSymbol) break;
                         }
                     }
 
@@ -749,16 +816,16 @@ public sealed partial class QueryCursor
                         bool nodeDoesMatch;
                         if (step.Symbol == WildcardSymbol)
                         {
-                            if (step.IsMissing) nodeDoesMatch = node.IsMissing;
-                            else nodeDoesMatch = !nodeIsError && (node.IsNamed || !step.IsNamed);
+                            if (step.IsMissing) nodeDoesMatch = nodeIsMissing;
+                            else nodeDoesMatch = !nodeIsError && (nodeIsNamed || !step.IsNamed);
                         }
                         else
                         {
-                            nodeDoesMatch = node.Symbol == step.Symbol && (!step.IsMissing || node.IsMissing);
+                            nodeDoesMatch = nodeSymbol == step.Symbol && (!step.IsMissing || nodeIsMissing);
                         }
 
                         bool laterSiblingCanMatch = hasLaterSiblings;
-                        if ((step.IsImmediate && node.IsNamed && !state.SkippedQuantifier) ||
+                        if ((step.IsImmediate && nodeIsNamed && !state.SkippedQuantifier) ||
                             state.SeekingImmediateMatch)
                         {
                             laterSiblingCanMatch = false;
@@ -844,8 +911,7 @@ public sealed partial class QueryCursor
                         // that the node has a parent, and capture the parent node if necessary.
                         if (state.NeedsParent)
                         {
-                            Node parent = _cursor.ParentNode();
-                            if (parent.IsNull)
+                            if (parentIsNull)
                             {
                                 state.Dead = true;
                             }
@@ -866,7 +932,7 @@ public sealed partial class QueryCursor
                                     {
                                         if (skippedWildcardStep.CaptureIds[0] != None)
                                         {
-                                            Capture(ref state, skippedWildcardStep, parent);
+                                            Capture(ref state, ref skippedWildcardStep, parentNode);
                                         }
                                         break;
                                     }
@@ -877,7 +943,7 @@ public sealed partial class QueryCursor
                         // If the current node is captured in this pattern, add it to the capture list.
                         if (step.CaptureIds[0] != None)
                         {
-                            Capture(ref state, step, node);
+                            Capture(ref state, ref step, node);
                         }
 
                         if (state.Dead)
@@ -1038,8 +1104,8 @@ public sealed partial class QueryCursor
                             }
 
                             CompareCaptures(
-                                state,
-                                otherState,
+                                ref state,
+                                ref otherState,
                                 out bool leftContainsRight,
                                 out bool rightContainsLeft);
                             if (leftContainsRight)
@@ -1096,7 +1162,8 @@ public sealed partial class QueryCursor
                     }
                 }
 
-                if (nodeIntersectsContainingRange && ShouldDescend(nodeIntersectsRange))
+                if (nodeIntersectsContainingRange &&
+                    ShouldDescend(nodeIntersectsRange, nodeIsRepetition, nodeRawSymbol))
                 {
                     switch (_cursor.GotoFirstChildInternal())
                     {
@@ -1190,8 +1257,8 @@ public sealed partial class QueryCursor
 
     // Determine if either state contains a superset of the other state's captures.
     private void CompareCaptures(
-        QueryState leftState,
-        QueryState rightState,
+        ref QueryState leftState,
+        ref QueryState rightState,
         out bool leftContainsRight,
         out bool rightContainsLeft)
     {
@@ -1208,8 +1275,8 @@ public sealed partial class QueryCursor
             {
                 if (j < rightCaptures.Size)
                 {
-                    QueryCapture left = leftCaptures.Get(i);
-                    QueryCapture right = rightCaptures.Get(j);
+                    ref QueryCapture left = ref leftCaptures.Get(i);
+                    ref QueryCapture right = ref rightCaptures.Get(j);
                     if (left.Node.IdEquals(right.Node) && left.Index == right.Index)
                     {
                         i++;
@@ -1251,7 +1318,7 @@ public sealed partial class QueryCursor
     }
 
     // Order two in-progress states for the longest-match dedup pass.
-    private bool StatePrecedes(QueryState a, QueryState b)
+    private bool StatePrecedes(ref QueryState a, ref QueryState b)
     {
         if (a.StartDepth != b.StartDepth) return a.StartDepth < b.StartDepth;
         if (a.PatternIndex != b.PatternIndex) return a.PatternIndex < b.PatternIndex;
@@ -1270,11 +1337,11 @@ public sealed partial class QueryCursor
     // This runs once per node, right before the dedup pass.
     private void SortStatesByCapture()
     {
-        TsArray<QueryState> states = _states;
+        ref TsArray<QueryState> states = ref _states;
         for (uint i = 1; i < states.Size; i++)
         {
             // Fast+common path: this state is already ordered after its predecessor.
-            if (!StatePrecedes(states.Get(i), states.Get(i - 1))) continue;
+            if (!StatePrecedes(ref states.Get(i), ref states.Get(i - 1))) continue;
 
             QueryState key = states.Get(i);
             uint j = i;
@@ -1283,7 +1350,7 @@ public sealed partial class QueryCursor
                 states.Get(j) = states.Get(j - 1);
                 j--;
             }
-            while (j > 0 && StatePrecedes(key, states.Get(j - 1)));
+            while (j > 0 && StatePrecedes(ref key, ref states.Get(j - 1)));
 
             states.Get(j) = key;
         }
@@ -1341,7 +1408,7 @@ public sealed partial class QueryCursor
         return ref _captureListPool.GetMut(state.CaptureListId);
     }
 
-    private void Capture(ref QueryState state, QueryStep step, Node node)
+    private void Capture(ref QueryState state, ref QueryStep step, Node node)
     {
         if (state.Dead) return;
 
@@ -1366,18 +1433,19 @@ public sealed partial class QueryCursor
     // the capture-list pool is exhausted.
     private int CopyState(uint stateIndex)
     {
-        QueryState state = _states.Get(stateIndex);
+        ref QueryState state = ref _states.Get(stateIndex);
         QueryState copy = state;
+        uint oldCaptureListId = state.CaptureListId;
         copy.CaptureListId = QueryCursor.CaptureListNone;
 
         // If the state has captures, copy its capture list.
-        if (state.CaptureListId != QueryCursor.CaptureListNone)
+        if (oldCaptureListId != QueryCursor.CaptureListNone)
         {
             bool acquired;
             ref TsArray<QueryCapture> newCaptures = ref PrepareToCapture(ref copy, stateIndex, out acquired);
             if (!acquired) return -1;
 
-            ref TsArray<QueryCapture> oldCaptures = ref _captureListPool.Get(state.CaptureListId);
+            ref TsArray<QueryCapture> oldCaptures = ref _captureListPool.Get(oldCaptureListId);
             newCaptures.PushAll(oldCaptures);
         }
 
@@ -1386,7 +1454,7 @@ public sealed partial class QueryCursor
     }
 
     // Determine if the cursor should descend into the current node's children.
-    private bool ShouldDescend(bool nodeIntersectsRange)
+    private bool ShouldDescend(bool nodeIntersectsRange, bool isRepetition, ushort rawSymbol)
     {
         if (nodeIntersectsRange && _depth < _maxStartDepth) return true;
 
@@ -1409,14 +1477,13 @@ public sealed partial class QueryCursor
         // roots inside this node and another root as part of a sibling node.
         if (!_onVisibleNode)
         {
-            Subtree subtree = _cursor.CurrentSubtree;
-            if (subtree.IsRepetition)
+            if (isRepetition)
             {
                 // Avoid descending into repetition nodes unless we have already determined
                 // that this query can match rootless patterns inside this repetition node.
                 _query.RepeatSymbolsWithRootlessPatterns.SearchSortedBy(
                     static (ushort s) => (int)s,
-                    (int)subtree.Symbol,
+                    (int)rawSymbol,
                     out _,
                     out bool exists);
                 return exists;
@@ -1439,14 +1506,14 @@ public sealed partial class QueryCursor
     {
         while (_finishedStatesHeapSize < _finishedStates.Size)
         {
-            FinishedStateSiftUp(_finishedStates, _finishedStatesHeapSize, _captureListPool);
+            FinishedStateSiftUp(ref _finishedStates, _finishedStatesHeapSize, _captureListPool);
             _finishedStatesHeapSize++;
         }
     }
 
     // A copy of the state's captures: QueryMatch owns its captures, unlike the C code where
     // they point into the capture list pool and stay valid until the next call.
-    private QueryCapture[] CaptureArray(QueryState state)
+    private QueryCapture[] CaptureArray(ref QueryState state)
     {
         ref TsArray<QueryCapture> captures = ref _captureListPool.Get(state.CaptureListId);
         QueryCapture[] result = new QueryCapture[(int)captures.Size];
@@ -1457,18 +1524,20 @@ public sealed partial class QueryCursor
     // ------------------------------------------------------------------
     // Finished-state heap (min-heap ordered by capture byte, pattern index, insert order)
 
-    private static void FinishedStateSwap(TsArray<QueryState> states, uint a, uint b)
+    private static void FinishedStateSwap(ref TsArray<QueryState> states, uint a, uint b)
     {
-        QueryState tmp = states.Get(a);
-        states.Get(a) = states.Get(b);
-        states.Get(b) = tmp;
+        ref QueryState sa = ref states.Get(a);
+        ref QueryState sb = ref states.Get(b);
+        QueryState tmp = sa;
+        sa = sb;
+        sb = tmp;
     }
 
     // Compare two finished states by (byte offset of next unconsumed capture,
     // pattern_index, insertion order).
     private static bool FinishedStatePrecedes(
-        QueryState a,
-        QueryState b,
+        ref QueryState a,
+        ref QueryState b,
         CaptureListPool pool)
     {
         ref TsArray<QueryCapture> aCaps = ref pool.Get(a.CaptureListId);
@@ -1483,7 +1552,7 @@ public sealed partial class QueryCursor
     }
 
     private static void FinishedStateSiftDown(
-        TsArray<QueryState> states,
+        ref TsArray<QueryState> states,
         uint index,
         CaptureListPool pool)
     {
@@ -1493,33 +1562,33 @@ public sealed partial class QueryCursor
             uint smallest = index;
             uint left = 2u * index + 1u;
             uint right = 2u * index + 2u;
-            if (left < size && FinishedStatePrecedes(states.Get(left), states.Get(smallest), pool))
+            if (left < size && FinishedStatePrecedes(ref states.Get(left), ref states.Get(smallest), pool))
             {
                 smallest = left;
             }
 
-            if (right < size && FinishedStatePrecedes(states.Get(right), states.Get(smallest), pool))
+            if (right < size && FinishedStatePrecedes(ref states.Get(right), ref states.Get(smallest), pool))
             {
                 smallest = right;
             }
 
             if (smallest == index) break;
-            FinishedStateSwap(states, index, smallest);
+            FinishedStateSwap(ref states, index, smallest);
             index = smallest;
         }
     }
 
     private static void FinishedStateSiftUp(
-        TsArray<QueryState> states,
+        ref TsArray<QueryState> states,
         uint index,
         CaptureListPool pool)
     {
         while (index > 0)
         {
             uint parent = (index - 1u) / 2u;
-            if (FinishedStatePrecedes(states.Get(index), states.Get(parent), pool))
+            if (FinishedStatePrecedes(ref states.Get(index), ref states.Get(parent), pool))
             {
-                FinishedStateSwap(states, index, parent);
+                FinishedStateSwap(ref states, index, parent);
                 index = parent;
             }
             else
@@ -1533,7 +1602,7 @@ public sealed partial class QueryCursor
     {
         if (states.Size > 1) states.Get(0) = states.Get(states.Size - 1);
         states.Size--;
-        if (states.Size > 0) FinishedStateSiftDown(states, 0, pool);
+        if (states.Size > 0) FinishedStateSiftDown(ref states, 0, pool);
     }
 
     // Remove an element at an arbitrary index and restore heap order.
@@ -1551,26 +1620,30 @@ public sealed partial class QueryCursor
         states.Get(index) = states.Get(states.Size - 1);
         states.Size--;
         // The replacement element may need to go up or down.
-        if (index > 0 && FinishedStatePrecedes(states.Get(index), states.Get((index - 1u) / 2u), pool))
+        if (index > 0 && FinishedStatePrecedes(ref states.Get(index), ref states.Get((index - 1u) / 2u), pool))
         {
-            FinishedStateSiftUp(states, index, pool);
+            FinishedStateSiftUp(ref states, index, pool);
         }
         else
         {
-            FinishedStateSiftDown(states, index, pool);
+            FinishedStateSiftDown(ref states, index, pool);
         }
     }
 
     // ------------------------------------------------------------------
     // Range helpers
 
-    private static QueryRange Range(Node node) => new()
+    private static QueryRange Range(Node node, Length size)
     {
-        StartPoint = node.StartPoint,
-        EndPoint = node.EndPoint,
-        StartByte = node.StartByte,
-        EndByte = node.EndByte,
-    };
+        Point startPoint = new(node.StartRow, node.StartColumn);
+        return new QueryRange
+        {
+            StartPoint = startPoint,
+            EndPoint = Point.Add(startPoint, size.Extent),
+            StartByte = node.StartByteValue,
+            EndByte = node.StartByteValue + size.Bytes,
+        };
+    }
 
     private static bool RangeIntersects(QueryRange a, QueryRange b)
     {

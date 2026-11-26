@@ -1,6 +1,8 @@
 // Port of tree-sitter v0.27.2 (3fb7be4): lib/src/reusable_node.h and lib/src/reduce_action.h.
 // Same fields and same logic; the arrays are TsArray, as in the rest of the port.
 
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using TreeSitter.Subtrees;
 
 namespace TreeSitter.Parsing;
@@ -31,61 +33,136 @@ internal struct ReusableNode
 
     /// <summary>reusable_node_tree</summary>
     internal readonly Subtree Tree => Stack.Size > 0
-        ? Stack.Contents![Stack.Size - 1].Tree
+        ? Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Stack.Contents!), (nint)(Stack.Size - 1)).Tree
         : Subtree.Null;
 
     /// <summary>reusable_node_byte_offset</summary>
     internal readonly uint ByteOffset => Stack.Size > 0
-        ? Stack.Contents![Stack.Size - 1].ByteOffset
+        ? Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(Stack.Contents!), (nint)(Stack.Size - 1)).ByteOffset
         : uint.MaxValue;
 
     /// <summary>reusable_node_delete</summary>
     internal void Delete() => Stack.Delete();
 
     /// <summary>reusable_node_advance</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void Advance()
     {
-        ReusableNodeEntry lastEntry = Stack.Back();
-        uint byteOffset = lastEntry.ByteOffset + lastEntry.Tree.TotalBytes;
-        if (lastEntry.Tree.HasExternalTokens)
+        // The entries are read through the array of the stack: the node data of an entry is
+        // looked up once per step (a Subtree accessor would look it up again), and the stack
+        // size is written back once, at the exit point.
+        uint size = Stack.Size;
+        ref ReusableNodeEntry entriesBase = ref MemoryMarshal.GetArrayDataReference(Stack.Contents!);
+        ref ReusableNodeEntry lastEntry = ref Unsafe.Add(ref entriesBase, (nint)(size - 1));
+        Subtree lastTree = lastEntry.Tree;
+        ulong lastRaw = lastTree.Value;
+        uint byteOffset;
+        if ((lastRaw & 1UL) != 0)
         {
-            LastExternalToken = SubtreeOps.LastExternalToken(lastEntry.Tree);
+            byteOffset = lastEntry.ByteOffset + ((uint)((lastRaw >> 48) & 0xFF)) + ((uint)((lastRaw >> 56) & 0xFF));
+        }
+        else
+        {
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(lastTree);
+            byteOffset = lastEntry.ByteOffset + heap.Padding.Bytes + heap.Size.Bytes;
+            if ((heap.Flags & SubtreeFlags.HasExternalTokens) != 0)
+            {
+                LastExternalToken = FindLastExternalToken(lastTree, ref heap);
+            }
         }
 
-        Subtree tree;
         uint nextIndex;
+        int childrenHandle;
+        uint childCount;
         do
         {
-            ReusableNodeEntry poppedEntry = Stack.Pop();
-            nextIndex = poppedEntry.ChildIndex + 1;
-            if (Stack.Size == 0)
+            nextIndex = Unsafe.Add(ref entriesBase, (nint)(size - 1)).ChildIndex + 1;
+            size--;
+            if (size == 0)
             {
+                Stack.Size = 0;
                 return;
             }
 
-            tree = Stack.Back().Tree;
+            Subtree tree = Unsafe.Add(ref entriesBase, (nint)(size - 1)).Tree;
+            if ((tree.Value & 1UL) != 0)
+            {
+                childrenHandle = -1;
+                childCount = 0;
+            }
+            else
+            {
+                ref SubtreeHeapData heap = ref SubtreeArena.Get(tree);
+                childrenHandle = heap.ChildrenHandle;
+                childCount = heap.ChildCount;
+            }
         }
-        while (tree.ChildCount <= nextIndex);
+        while (childCount <= nextIndex);
 
-        Stack.Push(new ReusableNodeEntry
+        Subtree nextChild = Unsafe.Add(
+            ref MemoryMarshal.GetArrayDataReference(SubtreeArena.GetChildren(childrenHandle)),
+            (nint)nextIndex);
+
+        // We popped at least one entry above, so size < Stack.Capacity: write directly into slot [size].
+        ref ReusableNodeEntry slot = ref Unsafe.Add(ref entriesBase, (nint)size);
+        slot.Tree = nextChild;
+        slot.ChildIndex = nextIndex;
+        slot.ByteOffset = byteOffset;
+        Stack.Size = size + 1u;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Subtree FindLastExternalToken(Subtree tree, ref SubtreeHeapData heap)
+    {
+        uint childCount = heap.ChildCount;
+        while (childCount > 0)
         {
-            Tree = tree.Children[(int)nextIndex],
-            ChildIndex = nextIndex,
-            ByteOffset = byteOffset,
-        });
+            ref Subtree childrenBase = ref MemoryMarshal.GetArrayDataReference(
+                SubtreeArena.GetChildren(heap.ChildrenHandle));
+            for (uint i = childCount; i > 0; i--)
+            {
+                Subtree child = Unsafe.Add(ref childrenBase, (nint)(i - 1));
+                if ((child.Value & 1UL) == 0)
+                {
+                    ref SubtreeHeapData childHeap = ref SubtreeArena.Get(child);
+                    if ((childHeap.Flags & SubtreeFlags.HasExternalTokens) != 0)
+                    {
+                        tree = child;
+                        heap = ref childHeap;
+                        childCount = childHeap.ChildCount;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return tree;
     }
 
     /// <summary>reusable_node_descend</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool Descend()
     {
-        ReusableNodeEntry lastEntry = Stack.Back();
-        if (lastEntry.Tree.ChildCount > 0)
+        uint size = Stack.Size;
+        ref ReusableNodeEntry lastEntry = ref Unsafe.Add(
+            ref MemoryMarshal.GetArrayDataReference(Stack.Contents!),
+            (nint)(size - 1));
+        Subtree tree = lastEntry.Tree;
+        if ((tree.Value & 1UL) != 0)
         {
+            return false;
+        }
+
+        ref SubtreeHeapData heap = ref SubtreeArena.Get(tree);
+        if (heap.ChildCount > 0)
+        {
+            uint byteOffset = lastEntry.ByteOffset;
+            Subtree firstChild = MemoryMarshal.GetArrayDataReference(SubtreeArena.GetChildren(heap.ChildrenHandle));
             Stack.Push(new ReusableNodeEntry
             {
-                Tree = lastEntry.Tree.Children[0],
+                Tree = firstChild,
                 ChildIndex = 0,
-                ByteOffset = lastEntry.ByteOffset,
+                ByteOffset = byteOffset,
             });
             return true;
         }
@@ -96,8 +173,29 @@ internal struct ReusableNode
     /// <summary>reusable_node_advance_past_leaf</summary>
     internal void AdvancePastLeaf()
     {
-        while (Descend())
+        uint size = Stack.Size;
+        ref ReusableNodeEntry lastEntry = ref Unsafe.Add(
+            ref MemoryMarshal.GetArrayDataReference(Stack.Contents!),
+            (nint)(size - 1));
+        Subtree tree = lastEntry.Tree;
+        uint byteOffset = lastEntry.ByteOffset;
+
+        while ((tree.Value & 1UL) == 0)
         {
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(tree);
+            if (heap.ChildCount == 0)
+            {
+                break;
+            }
+
+            Subtree firstChild = MemoryMarshal.GetArrayDataReference(SubtreeArena.GetChildren(heap.ChildrenHandle));
+            Stack.Push(new ReusableNodeEntry
+            {
+                Tree = firstChild,
+                ChildIndex = 0,
+                ByteOffset = byteOffset,
+            });
+            tree = firstChild;
         }
 
         Advance();
@@ -177,9 +275,16 @@ internal static class RangeArray
     /// <summary>ts_range_array_intersects</summary>
     internal static bool Intersects(in TsArray<Range> self, uint startIndex, uint startByte, uint endByte)
     {
-        for (uint i = startIndex; i < self.Size; i++)
+        uint size = self.Size;
+        if (startIndex >= size)
         {
-            Range range = self.Contents![i];
+            return false;
+        }
+
+        ref Range baseRef = ref MemoryMarshal.GetArrayDataReference(self.Contents!);
+        for (uint i = startIndex; i < size; i++)
+        {
+            ref Range range = ref Unsafe.Add(ref baseRef, (nint)i);
             if (range.EndByte > startByte)
             {
                 if (range.StartByte >= endByte)

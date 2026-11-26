@@ -1,23 +1,21 @@
 // Port of tree-sitter v0.27.2 (3fb7be4): lib/src/subtree.h (types and inline accessors).
-// Memory model: docs/ARCHITECTURE.md decision D1.
+// Memory model: docs/ARCHITECTURE.md decision D1, ARENA.md A1/A2.
 //
-// Subtree = { ulong Inline; SubtreeHeap? Heap }:
-// - NULL_SUBTREE: Heap == null and bit 0 of Inline is 0 (Inline == 0).
-// - inline leaf: Heap == null and bit 0 of Inline is 1. Bits follow the little-endian
-//   SubtreeInlineData of subtree.h:
+// Subtree = ulong Value:
+// - NULL_SUBTREE: Value == 0.
+// - inline leaf: bit 0 is 1. Bits follow the little-endian SubtreeInlineData of subtree.h:
 //     bit 0 is_inline, 1 visible, 2 named, 3 extra, 4 has_changes, 5 is_missing,
 //     6 is_keyword, 7 depends_on_column,
 //     bits 8-15 symbol, 16-31 parse_state, 32-39 padding_columns,
 //     40-43 padding_rows, 44-47 lookahead_bytes, 48-55 padding_bytes, 56-63 size_bytes.
-// - heap subtree: Heap != null (Inline is 0).
-// Every accessor below is the inline function of subtree.h with the same name and logic.
+// - heap subtree: bit 0 is 0, Value != 0. (Value >> 1) & 0xFFFFFFFF is the arena handle.
+//   In DEBUG, high bits carry a generation counter.
 //
-// The bit positions of the inline data are the ones of the little-endian C layout:
-// the first bit field byte holds is_inline, visible, named, extra, has_changes,
-// is_missing, is_keyword and depends_on_column, then the symbol byte, then the
-// parse state (2 bytes), then the size bytes.
+// Subtree has no reference field, so Subtree[] is an array of an unmanaged type: the GC
+// never scans it and stores into it have no write barrier.
 
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace TreeSitter.Subtrees;
 
@@ -39,47 +37,202 @@ internal enum SubtreeFlags : ushort
     IsKeyword = 1 << 10,
 }
 
-/// <summary>SubtreeHeapData. RefCount is changed only with Interlocked (ts_subtree_retain/release).</summary>
-internal sealed class SubtreeHeap
+/// <summary>
+/// ExternalScannerState: short data inline (24 bytes), longer data in an array.
+/// Used as a managed convenience value; heap storage uses <see cref="ExternalScannerStateData"/>.
+/// </summary>
+internal struct ExternalScannerState
 {
-    internal int RefCount;
-    internal Length Padding;
-    internal Length Size;
-    internal uint LookaheadBytes;
-    internal uint ErrorCost;
-    internal uint ChildCount;
-    internal ushort Symbol;
-    internal ushort ParseState;
-    internal SubtreeFlags Flags;
+    private const int ShortCapacity = ExternalScannerStateData.ShortCapacity;
 
-    /// <summary>The children (C: stored before the header). Length may be larger than ChildCount.</summary>
-    internal Subtree[]? Children;
+    [InlineArray(ShortCapacity)]
+    private struct ShortBuffer
+    {
+        private byte _element0;
+    }
 
-    // Union part, non-terminal (ChildCount > 0):
-    internal uint VisibleChildCount;
-    internal uint NamedChildCount;
-    internal uint VisibleDescendantCount;
-    internal int DynamicPrecedence;
-    internal ushort RepeatDepth;
-    internal ushort ProductionId;
-    internal ushort FirstLeafSymbol;
-    internal ushort FirstLeafParseState;
+    private ShortBuffer _short;
+    private byte[]? _long;
+    private uint _length;
 
-    // Union part, external token (ChildCount == 0 and HasExternalTokens):
-    internal ExternalScannerState ExternalScannerState;
+    /// <summary>ts_external_scanner_state_init</summary>
+    internal static ExternalScannerState Create(ReadOnlySpan<byte> data)
+    {
+        ExternalScannerState state = default;
+        if (data.Length > ShortCapacity)
+        {
+            state._long = data.ToArray();
+        }
+        else
+        {
+            Span<byte> buffer = MemoryMarshal.CreateSpan(ref state._short[0], ShortCapacity);
+            data.CopyTo(buffer);
+        }
 
-    // Union part, error leaf (ChildCount == 0 and Symbol == BuiltinSymbols.Error):
-    internal int LookaheadChar;
+        state._length = (uint)data.Length;
+        return state;
+    }
 
-    /// <summary>Sets or clears one flag of the heap data.</summary>
-    /// <param name="flag">The flag to change.</param>
-    /// <param name="value">True to set the flag, false to clear it.</param>
-    internal void SetFlag(SubtreeFlags flag, bool value) =>
-        Flags = value ? Flags | flag : Flags & ~flag;
+    /// <summary>Creates from arena heap storage.</summary>
+    internal static ExternalScannerState FromData(in ExternalScannerStateData data)
+    {
+        ExternalScannerState state = default;
+        state._length = data.Length;
+        if (data.Length > ShortCapacity)
+        {
+            byte[] src = SubtreeArena.GetLongExternalState(data.LongHandle);
+            state._long = src.AsSpan(0, (int)data.Length).ToArray();
+        }
+        else if (data.Length > 0)
+        {
+            Span<byte> dst = MemoryMarshal.CreateSpan(ref state._short[0], ShortCapacity);
+            ReadOnlySpan<byte> src = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef(in data.Short[0]), (int)data.Length);
+            src.CopyTo(dst);
+        }
 
-    /// <summary>True when the flag is set.</summary>
-    /// <param name="flag">The flag to test.</param>
-    internal bool HasFlag(SubtreeFlags flag) => (Flags & flag) != 0;
+        return state;
+    }
+
+    /// <summary>Writes this state into arena heap storage, allocating a long-state handle if needed.</summary>
+    internal void WriteTo(ref ExternalScannerStateData data)
+    {
+        // In the union of ExternalScannerState (subtree.h) the long data handle covers the
+        // short data, so only the length says which of the two is live: free the old long
+        // state only when the current length makes it a long one, as ts_external_scanner_state_delete.
+        if (data.Length > ShortCapacity && data.LongHandle > 0)
+        {
+            SubtreeArena.FreeLongExternalState(data.LongHandle);
+        }
+
+        if (_length > ShortCapacity)
+        {
+            byte[] copy = _long!.AsSpan(0, (int)_length).ToArray();
+            data.Short = default;
+            data.LongHandle = SubtreeArena.StoreLongExternalState(copy);
+            data.Length = _length;
+        }
+        else
+        {
+            data.Short = default;
+            if (_length > 0)
+            {
+                ReadOnlySpan<byte> src = MemoryMarshal.CreateReadOnlySpan(ref _short[0], (int)_length);
+                Span<byte> dst = MemoryMarshal.CreateSpan(ref data.Short[0], ShortCapacity);
+                src.CopyTo(dst);
+            }
+
+            data.Length = _length;
+        }
+    }
+
+    /// <summary>Copies arena heap storage (clones long-state handle content).</summary>
+    internal static void CopyData(in ExternalScannerStateData source, ref ExternalScannerStateData dest)
+    {
+        // See WriteTo: the length, not the overlapping handle, says whether the data is long.
+        if (dest.Length > ShortCapacity && dest.LongHandle > 0)
+        {
+            SubtreeArena.FreeLongExternalState(dest.LongHandle);
+        }
+
+        dest = default;
+        dest.Length = source.Length;
+        if (source.Length > ShortCapacity)
+        {
+            byte[] src = SubtreeArena.GetLongExternalState(source.LongHandle);
+            byte[] copy = src.AsSpan(0, (int)source.Length).ToArray();
+            dest.LongHandle = SubtreeArena.StoreLongExternalState(copy);
+        }
+        else
+        {
+            if (source.Length > 0)
+            {
+                ReadOnlySpan<byte> src = MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef(in source.Short[0]), (int)source.Length);
+                Span<byte> dst = MemoryMarshal.CreateSpan(ref dest.Short[0], ShortCapacity);
+                src.CopyTo(dst);
+            }
+        }
+    }
+
+    /// <summary>Frees long-state side table entry in arena storage.</summary>
+    internal static void DeleteData(ref ExternalScannerStateData data)
+    {
+        // See WriteTo: for short data the handle is the first bytes of the data itself.
+        if (data.Length > ShortCapacity && data.LongHandle > 0)
+        {
+            SubtreeArena.FreeLongExternalState(data.LongHandle);
+        }
+
+        data = default;
+    }
+
+    /// <summary>Returns the data span from arena storage.</summary>
+    internal static ReadOnlySpan<byte> DataOf(in ExternalScannerStateData data)
+    {
+        if (data.Length > ShortCapacity)
+        {
+            return SubtreeArena.GetLongExternalState(data.LongHandle).AsSpan(0, (int)data.Length);
+        }
+
+        if (data.Length == 0)
+        {
+            return ReadOnlySpan<byte>.Empty;
+        }
+
+        return MemoryMarshal.CreateReadOnlySpan(ref Unsafe.AsRef(in data.Short[0]), (int)data.Length);
+    }
+
+    internal readonly ushort UnionRepeatDepth
+    {
+        get
+        {
+            if (_length > ShortCapacity)
+            {
+                return 0;
+            }
+
+            return (ushort)(_short[16] | (_short[17] << 8));
+        }
+    }
+
+    /// <summary>ts_external_scanner_state_copy</summary>
+    internal readonly ExternalScannerState Copy()
+    {
+        ExternalScannerState result = this;
+        if (_length > ShortCapacity)
+        {
+            result._long = _long!.AsSpan(0, (int)_length).ToArray();
+        }
+
+        return result;
+    }
+
+    /// <summary>ts_external_scanner_state_delete</summary>
+    internal void Delete()
+    {
+        _long = null;
+        _length = 0;
+    }
+
+    /// <summary>ts_external_scanner_state_data (length bytes)</summary>
+    internal readonly ReadOnlySpan<byte> Data
+    {
+        get
+        {
+            if (_length > ShortCapacity)
+            {
+                return _long!.AsSpan(0, (int)_length);
+            }
+
+            ref ExternalScannerState self = ref Unsafe.AsRef(in this);
+            return MemoryMarshal.CreateReadOnlySpan(ref self._short[0], (int)_length);
+        }
+    }
+
+    internal readonly uint Length => _length;
+
+    /// <summary>ts_external_scanner_state_eq</summary>
+    internal readonly bool Eq(ReadOnlySpan<byte> buffer) =>
+        _length == (uint)buffer.Length && Data.SequenceEqual(buffer);
 }
 
 /// <summary>Subtree / MutableSubtree of subtree.h. Mutability is a convention, as in C.</summary>
@@ -102,22 +255,48 @@ internal readonly struct Subtree : IEquatable<Subtree>
     private const int PaddingBytesShift = 48;
     private const int SizeBytesShift = 56;
 
-    internal readonly ulong Inline;
-    internal readonly SubtreeHeap? Heap;
+    internal readonly ulong Value;
 
-    internal Subtree(ulong inline, SubtreeHeap? heap)
+    private Subtree(ulong value)
     {
-        Inline = inline;
-        Heap = heap;
+        Value = value;
     }
+
+    // A heap subtree holds the address of its SubtreeHeapData in the pinned segments of
+    // SubtreeArena (bit 0 is 0, as for the pointer of the C union). Debug builds keep a
+    // generation in the top 16 bits (user space addresses use fewer than 48 bits).
+#if DEBUG
+    private const ulong PointerMask = 0x0000_FFFF_FFFF_FFFFUL;
+
+    internal static Subtree FromHeapPointer(nint pointer, ushort generation) =>
+        new Subtree((ulong)pointer | ((ulong)generation << 48));
+
+    internal ushort Generation => (ushort)(Value >> 48);
+
+    internal nint Pointer => (nint)(Value & PointerMask);
+#else
+    internal static Subtree FromHeapPointer(nint pointer) => new Subtree((ulong)pointer);
+
+    internal nint Pointer => (nint)Value;
+#endif
+
+    /// <summary>The arena handle of a heap subtree (segment and slot).</summary>
+    internal int Handle => SubtreeArena.Get(this).SelfHandle;
 
     /// <summary>NULL_SUBTREE</summary>
     internal static Subtree Null => default;
 
-    internal bool IsNull => Heap is null && (Inline & 1) == 0;
+#if DEBUG
+    /// <summary>Debug only: the value written into child arrays returned to the arena pool.</summary>
+    internal static Subtree Poison => new Subtree(0xFFFF_FFFF_FFFF_FF01UL);
+#endif
+
+    internal bool IsNull => Value == 0;
 
     /// <summary>data.is_inline</summary>
-    internal bool IsInline => Heap is null && (Inline & 1) != 0;
+    internal bool IsInline => (Value & 1) != 0;
+
+    internal bool IsHeap => (Value & 1) == 0 && Value != 0;
 
     /// <summary>Builds an inline leaf from the SubtreeInlineData fields (bit layout in the file header).</summary>
     internal static Subtree NewInline(
@@ -140,14 +319,14 @@ internal readonly struct Subtree : IEquatable<Subtree>
         inline |= (ulong)(lookaheadBytes & 0x0F) << LookaheadBytesShift;
         inline |= (ulong)paddingBytes << PaddingBytesShift;
         inline |= (ulong)sizeBytes << SizeBytesShift;
-        return new Subtree(inline, null);
+        return new Subtree(inline);
     }
 
     /// <summary>Returns a copy with the is_inline extra bit set or cleared (ts_subtree_set_extra on an inline subtree).</summary>
     internal Subtree WithInlineExtra(bool extra)
     {
-        ulong inline = extra ? Inline | ExtraBit : Inline & ~ExtraBit;
-        return new Subtree(inline, Heap);
+        ulong inline = extra ? Value | ExtraBit : Value & ~ExtraBit;
+        return new Subtree(inline);
     }
 
     /// <summary>
@@ -156,39 +335,38 @@ internal readonly struct Subtree : IEquatable<Subtree>
     /// </summary>
     internal Subtree WithInlineSymbol(ushort symbol, bool named, bool visible)
     {
-        // ts_subtree_set_symbol assigns visible and named, so the old bits are cleared first.
-        ulong inline = Inline & ~(((ulong)0xFF << SymbolShift) | NamedBit | VisibleBit);
+        ulong inline = Value & ~(((ulong)0xFF << SymbolShift) | NamedBit | VisibleBit);
         inline |= (ulong)(byte)symbol << SymbolShift;
         inline |= named ? NamedBit : 0;
         inline |= visible ? VisibleBit : 0;
-        return new Subtree(inline, Heap);
+        return new Subtree(inline);
     }
 
     /// <summary>Returns a copy with the is_missing bit set or cleared (ts_subtree_new_missing_leaf).</summary>
     internal Subtree WithInlineMissing(bool missing)
     {
-        ulong inline = missing ? Inline | IsMissingBit : Inline & ~IsMissingBit;
-        return new Subtree(inline, Heap);
+        ulong inline = missing ? Value | IsMissingBit : Value & ~IsMissingBit;
+        return new Subtree(inline);
     }
 
     /// <summary>Returns a copy with the has_changes bit set or cleared (ts_subtree_set_has_changes).</summary>
     internal Subtree WithInlineHasChanges(bool hasChanges)
     {
-        ulong inline = hasChanges ? Inline | HasChangesBit : Inline & ~HasChangesBit;
-        return new Subtree(inline, Heap);
+        ulong inline = hasChanges ? Value | HasChangesBit : Value & ~HasChangesBit;
+        return new Subtree(inline);
     }
 
     // ts_subtree_symbol, ts_subtree_visible, ... (SUBTREE_GET)
-    internal ushort Symbol => IsInline ? (ushort)((Inline >> SymbolShift) & 0xFF) : Heap!.Symbol;
-    internal bool Visible => IsInline ? (Inline & VisibleBit) != 0 : Heap!.HasFlag(SubtreeFlags.Visible);
-    internal bool Named => IsInline ? (Inline & NamedBit) != 0 : Heap!.HasFlag(SubtreeFlags.Named);
-    internal bool Extra => IsInline ? (Inline & ExtraBit) != 0 : Heap!.HasFlag(SubtreeFlags.Extra);
-    internal bool HasChanges => IsInline ? (Inline & HasChangesBit) != 0 : Heap!.HasFlag(SubtreeFlags.HasChanges);
-    internal bool IsMissing => IsInline ? (Inline & IsMissingBit) != 0 : Heap!.HasFlag(SubtreeFlags.IsMissing);
-    internal bool IsKeyword => IsInline ? (Inline & IsKeywordBit) != 0 : Heap!.HasFlag(SubtreeFlags.IsKeyword);
-    internal ushort ParseState => IsInline ? (ushort)((Inline >> ParseStateShift) & 0xFFFF) : Heap!.ParseState;
+    internal ushort Symbol => IsInline ? (ushort)((Value >> SymbolShift) & 0xFF) : SubtreeArena.Get(this).Symbol;
+    internal bool Visible => IsInline ? (Value & VisibleBit) != 0 : SubtreeArena.Get(this).HasFlag(SubtreeFlags.Visible);
+    internal bool Named => IsInline ? (Value & NamedBit) != 0 : SubtreeArena.Get(this).HasFlag(SubtreeFlags.Named);
+    internal bool Extra => IsInline ? (Value & ExtraBit) != 0 : SubtreeArena.Get(this).HasFlag(SubtreeFlags.Extra);
+    internal bool HasChanges => IsInline ? (Value & HasChangesBit) != 0 : SubtreeArena.Get(this).HasFlag(SubtreeFlags.HasChanges);
+    internal bool IsMissing => IsInline ? (Value & IsMissingBit) != 0 : SubtreeArena.Get(this).HasFlag(SubtreeFlags.IsMissing);
+    internal bool IsKeyword => IsInline ? (Value & IsKeywordBit) != 0 : SubtreeArena.Get(this).HasFlag(SubtreeFlags.IsKeyword);
+    internal ushort ParseState => IsInline ? (ushort)((Value >> ParseStateShift) & 0xFFFF) : SubtreeArena.Get(this).ParseState;
     internal uint LookaheadBytes =>
-        IsInline ? (uint)((Inline >> LookaheadBytesShift) & 0x0F) : Heap!.LookaheadBytes;
+        IsInline ? (uint)((Value >> LookaheadBytesShift) & 0x0F) : SubtreeArena.Get(this).LookaheadBytes;
 
     /// <summary>ts_subtree_leaf_symbol</summary>
     internal ushort LeafSymbol
@@ -197,10 +375,10 @@ internal readonly struct Subtree : IEquatable<Subtree>
         {
             if (IsInline)
             {
-                return (ushort)((Inline >> SymbolShift) & 0xFF);
+                return (ushort)((Value >> SymbolShift) & 0xFF);
             }
 
-            SubtreeHeap heap = Heap!;
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(this);
             return heap.ChildCount == 0 ? heap.Symbol : heap.FirstLeafSymbol;
         }
     }
@@ -212,10 +390,10 @@ internal readonly struct Subtree : IEquatable<Subtree>
         {
             if (IsInline)
             {
-                return (ushort)((Inline >> ParseStateShift) & 0xFFFF);
+                return (ushort)((Value >> ParseStateShift) & 0xFFFF);
             }
 
-            SubtreeHeap heap = Heap!;
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(this);
             return heap.ChildCount == 0 ? heap.ParseState : heap.FirstLeafParseState;
         }
     }
@@ -227,13 +405,13 @@ internal readonly struct Subtree : IEquatable<Subtree>
         {
             if (IsInline)
             {
-                uint bytes = (uint)((Inline >> PaddingBytesShift) & 0xFF);
-                uint row = (uint)((Inline >> PaddingRowsShift) & 0x0F);
-                uint column = (uint)((Inline >> PaddingColumnsShift) & 0xFF);
+                uint bytes = (uint)((Value >> PaddingBytesShift) & 0xFF);
+                uint row = (uint)((Value >> PaddingRowsShift) & 0x0F);
+                uint column = (uint)((Value >> PaddingColumnsShift) & 0xFF);
                 return new Length(bytes, new Point(row, column));
             }
 
-            return Heap!.Padding;
+            return SubtreeArena.Get(this).Padding;
         }
     }
 
@@ -244,25 +422,57 @@ internal readonly struct Subtree : IEquatable<Subtree>
         {
             if (IsInline)
             {
-                uint bytes = (uint)((Inline >> SizeBytesShift) & 0xFF);
+                uint bytes = (uint)((Value >> SizeBytesShift) & 0xFF);
                 return new Length(bytes, new Point(0, bytes));
             }
 
-            return Heap!.Size;
+            return SubtreeArena.Get(this).Size;
         }
     }
 
     /// <summary>ts_subtree_total_size</summary>
-    internal Length TotalSize => Length.Add(Padding, Size);
+    internal Length TotalSize
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get
+        {
+            if (IsInline)
+            {
+                return Length.Add(Padding, Size);
+            }
+
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(this);
+            return Length.Add(heap.Padding, heap.Size);
+        }
+    }
 
     /// <summary>ts_subtree_total_bytes</summary>
-    internal uint TotalBytes => TotalSize.Bytes;
+    internal uint TotalBytes
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => TotalSize.Bytes;
+    }
 
     /// <summary>ts_subtree_child_count</summary>
-    internal uint ChildCount => IsInline ? 0 : Heap!.ChildCount;
+    internal uint ChildCount => IsInline ? 0 : SubtreeArena.Get(this).ChildCount;
 
-    /// <summary>SubtreeHeapData.named_child_count; 0 for inline subtrees (no C accessor).</summary>
-    internal uint NamedChildCount => IsInline ? 0 : Heap!.NamedChildCount;
+    /// <summary>
+    /// SubtreeHeapData.named_child_count; 0 for inline subtrees and for leaves (in the union
+    /// the field is only valid for a node with children, as in C).
+    /// </summary>
+    internal uint NamedChildCount
+    {
+        get
+        {
+            if (IsInline)
+            {
+                return 0;
+            }
+
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(this);
+            return heap.ChildCount > 0 ? heap.NamedChildCount : 0;
+        }
+    }
 
     /// <summary>ts_subtree_children: ChildCount entries; empty for inline subtrees.</summary>
     internal ReadOnlySpan<Subtree> Children
@@ -274,18 +484,43 @@ internal readonly struct Subtree : IEquatable<Subtree>
                 return ReadOnlySpan<Subtree>.Empty;
             }
 
-            SubtreeHeap heap = Heap!;
-            return heap.Children is null
-                ? ReadOnlySpan<Subtree>.Empty
-                : heap.Children.AsSpan(0, (int)heap.ChildCount);
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(this);
+            if (heap.ChildCount == 0 || heap.ChildrenHandle < 0)
+            {
+                return ReadOnlySpan<Subtree>.Empty;
+            }
+
+            return SubtreeArena.GetChildren(heap.ChildrenHandle).AsSpan(0, (int)heap.ChildCount);
+        }
+    }
+
+    /// <summary>Children array for mutation (heap nodes with children only).</summary>
+    internal Subtree[] ChildrenArray
+    {
+        get
+        {
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(this);
+            return SubtreeArena.GetChildren(heap.ChildrenHandle);
         }
     }
 
     /// <summary>ts_subtree_repeat_depth</summary>
-    internal uint RepeatDepth =>
-        IsInline ? 0u
-        : Heap!.ChildCount == 0 && Heap.HasFlag(SubtreeFlags.HasExternalTokens) ? Heap.ExternalScannerState.UnionRepeatDepth
-        : Heap.RepeatDepth;
+    internal uint RepeatDepth
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get
+        {
+            if (IsInline)
+            {
+                return 0u;
+            }
+
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(this);
+            return heap.ChildCount == 0 && heap.HasFlag(SubtreeFlags.HasExternalTokens)
+                ? heap.ExternalScannerState.UnionRepeatDepth
+                : heap.RepeatDepth;
+        }
+    }
 
     /// <summary>ts_subtree_is_repetition</summary>
     internal bool IsRepetition
@@ -297,7 +532,7 @@ internal readonly struct Subtree : IEquatable<Subtree>
                 return false;
             }
 
-            SubtreeHeap heap = Heap!;
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(this);
             return !heap.HasFlag(SubtreeFlags.Named) &&
                 !heap.HasFlag(SubtreeFlags.Visible) &&
                 heap.ChildCount != 0;
@@ -314,7 +549,7 @@ internal readonly struct Subtree : IEquatable<Subtree>
                 return 0;
             }
 
-            SubtreeHeap heap = Heap!;
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(this);
             return heap.ChildCount == 0 ? 0 : heap.VisibleDescendantCount;
         }
     }
@@ -329,7 +564,7 @@ internal readonly struct Subtree : IEquatable<Subtree>
                 return 0;
             }
 
-            SubtreeHeap heap = Heap!;
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(this);
             return heap.ChildCount > 0 ? heap.VisibleChildCount : 0;
         }
     }
@@ -344,7 +579,7 @@ internal readonly struct Subtree : IEquatable<Subtree>
                 return ErrorCosts.ErrorCostPerMissingTree + ErrorCosts.ErrorCostPerRecovery;
             }
 
-            return IsInline ? 0 : Heap!.ErrorCost;
+            return IsInline ? 0 : SubtreeArena.Get(this).ErrorCost;
         }
     }
 
@@ -358,7 +593,7 @@ internal readonly struct Subtree : IEquatable<Subtree>
                 return 0;
             }
 
-            SubtreeHeap heap = Heap!;
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(this);
             return heap.ChildCount == 0 ? 0 : heap.DynamicPrecedence;
         }
     }
@@ -373,27 +608,27 @@ internal readonly struct Subtree : IEquatable<Subtree>
                 return 0;
             }
 
-            SubtreeHeap heap = Heap!;
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(this);
             return heap.ChildCount > 0 ? heap.ProductionId : (ushort)0;
         }
     }
 
     /// <summary>ts_subtree_fragile_left</summary>
-    internal bool FragileLeft => IsInline ? false : Heap!.HasFlag(SubtreeFlags.FragileLeft);
+    internal bool FragileLeft => !IsInline && SubtreeArena.Get(this).HasFlag(SubtreeFlags.FragileLeft);
 
     /// <summary>ts_subtree_fragile_right</summary>
-    internal bool FragileRight => IsInline ? false : Heap!.HasFlag(SubtreeFlags.FragileRight);
+    internal bool FragileRight => !IsInline && SubtreeArena.Get(this).HasFlag(SubtreeFlags.FragileRight);
 
     /// <summary>ts_subtree_has_external_tokens</summary>
-    internal bool HasExternalTokens => IsInline ? false : Heap!.HasFlag(SubtreeFlags.HasExternalTokens);
+    internal bool HasExternalTokens => !IsInline && SubtreeArena.Get(this).HasFlag(SubtreeFlags.HasExternalTokens);
 
     /// <summary>ts_subtree_has_external_scanner_state_change</summary>
     internal bool HasExternalScannerStateChange =>
-        IsInline ? false : Heap!.HasFlag(SubtreeFlags.HasExternalScannerStateChange);
+        !IsInline && SubtreeArena.Get(this).HasFlag(SubtreeFlags.HasExternalScannerStateChange);
 
     /// <summary>ts_subtree_depends_on_column</summary>
     internal bool DependsOnColumn =>
-        IsInline ? (Inline & DependsOnColumnBit) != 0 : Heap!.HasFlag(SubtreeFlags.DependsOnColumn);
+        IsInline ? (Value & DependsOnColumnBit) != 0 : SubtreeArena.Get(this).HasFlag(SubtreeFlags.DependsOnColumn);
 
     /// <summary>ts_subtree_is_fragile</summary>
     internal bool IsFragile
@@ -405,7 +640,7 @@ internal readonly struct Subtree : IEquatable<Subtree>
                 return false;
             }
 
-            SubtreeHeap heap = Heap!;
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(this);
             return heap.HasFlag(SubtreeFlags.FragileLeft) || heap.HasFlag(SubtreeFlags.FragileRight);
         }
     }
@@ -416,10 +651,10 @@ internal readonly struct Subtree : IEquatable<Subtree>
     /// <summary>ts_subtree_is_eof</summary>
     internal bool IsEof => Symbol == BuiltinSymbols.End;
 
-    /// <summary>Same subtree: same heap object, or the same inline bits (C compares the union).</summary>
-    public bool Equals(Subtree other) => Inline == other.Inline && ReferenceEquals(Heap, other.Heap);
+    /// <summary>Same subtree: same value (handle+generation or inline bits).</summary>
+    public bool Equals(Subtree other) => Value == other.Value;
 
     public override bool Equals(object? obj) => obj is Subtree other && Equals(other);
 
-    public override int GetHashCode() => Heap is null ? Inline.GetHashCode() : RuntimeHelpers.GetHashCode(Heap);
+    public override int GetHashCode() => Value.GetHashCode();
 }

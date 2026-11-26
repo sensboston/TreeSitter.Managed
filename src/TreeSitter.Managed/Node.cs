@@ -1,7 +1,7 @@
 // Port of tree-sitter v0.27.2 (3fb7be4): lib/src/node.c.
 // Rules: docs/ARCHITECTURE.md D2. Each method has the C name above it and the same logic.
 // - TSNode.id (address of a Subtree slot) is (Owner, Slot): Owner is the Tree for the root
-//   slot (Slot 0) or the SubtreeHeap whose Children[Slot] holds the subtree.
+//   slot (Slot 0) or the children array (Subtree[]) whose [Slot] holds the subtree.
 // - TSNode.context[0..3] is StartByte, StartRow, StartColumn, Alias.
 // - The null node (ts_node_is_null: id == NULL) is default(Node).
 // - ToString() is ts_node_string, byte for byte.
@@ -38,7 +38,7 @@ public readonly struct Node : IEquatable<Node>
     internal Subtree Subtree => Owner switch
     {
         Tree t => t.Root,
-        SubtreeHeap h => h.Children![Slot],
+        Subtree[] children => children[Slot],
         _ => Subtree.Null
     };
 
@@ -366,7 +366,7 @@ public readonly struct Node : IEquatable<Node>
                 return default;
             }
 
-            SubtreeHeap heap = self.Subtree.Heap!;
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(self.Subtree);
             ReadOnlySpan<FieldMapEntry> fieldMap = self.Tree.Language.FieldMap(heap.ProductionId);
             if (fieldMap.IsEmpty)
             {
@@ -901,7 +901,7 @@ public readonly struct Node : IEquatable<Node>
 
     private static string? FieldNameFromLanguage(Node self, uint structuralChildIndex)
     {
-        SubtreeHeap heap = self.Subtree.Heap!;
+        ref SubtreeHeapData heap = ref SubtreeArena.Get(self.Subtree);
         ReadOnlySpan<FieldMapEntry> fieldMap = self.Tree.Language.FieldMap(heap.ProductionId);
 
         foreach (ref readonly FieldMapEntry map in fieldMap)
@@ -943,11 +943,8 @@ public readonly struct Node : IEquatable<Node>
                 return;
             }
 
-            SubtreeHeap heap = ParentSubtree.Heap!;
-            if (Language.TryGetAliasSequence(heap.ProductionId, out ReadOnlySpan<ushort> sequence))
-            {
-                AliasSequence = sequence.ToArray();
-            }
+            ref SubtreeHeapData heap = ref SubtreeArena.Get(ParentSubtree);
+            AliasSequence = Language.AliasSequenceArray(heap.ProductionId);
         }
 
         internal bool Done => ChildIndex >= ParentSubtree.ChildCount;
@@ -980,7 +977,7 @@ public readonly struct Node : IEquatable<Node>
 
             child = new Node(
                 Parent.TreeOrNull!,
-                ParentSubtree.Heap!,
+                SubtreeArena.GetChildren(SubtreeArena.Get(ParentSubtree).ChildrenHandle),
                 (int)ChildIndex,
                 Position,
                 aliasSymbol);
